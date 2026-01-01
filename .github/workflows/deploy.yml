@@ -13,6 +13,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Fetch enough history to compare with previous commit
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -43,21 +45,22 @@ jobs:
         id: changed-files
         run: |
           # Get changed files from the push
-          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -v "^\.github/" | grep -v "^\.git/" || echo "")
-
-          # If no files or this is the first push, invalidate everything
-          if [ -z "$CHANGED_FILES" ]; then
+          if [ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]; then
+            # First push - invalidate everything
             echo "paths=/*" >> $GITHUB_OUTPUT
           else
-            # Convert file paths to CloudFront invalidation paths
-            PATHS=$(echo "$CHANGED_FILES" | sed 's|^|/|' | tr '\n' ' ')
-            # Always include index.html in case routing changed
-            PATHS="$PATHS /index.html"
-            echo "paths=$PATHS" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Invalidate CloudFront cache
-        run: |
+            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null | grep -v "^\.github/" | grep -v "^\.git/" || echo "")
+            
+            # If git diff fails or no files changed, invalidate root paths
+            if [ -z "$CHANGED_FILES" ]; then
+              echo "paths=/* /index.html" >> $GITHUB_OUTPUT
+            else
+              # Convert file paths to CloudFront invalidation paths
+              PATHS=$(echo "$CHANGED_FILES" | sed 's|^|/|' | tr '\n' ' ')
+              # Always include index.html in case routing changed
+              PATHS="$PATHS /index.html"
+              echo "paths=$PATHS" >> $GITHUB_OUTPUT
+            fi
           PATHS="${{ steps.changed-files.outputs.paths }}"
 
           # Create invalidation
