@@ -504,12 +504,12 @@ class DrawvidDotCom extends Phaser.Scene {
       window.location.href = "https://www.giphy.com/drawvid";
     });
     giphy.setDepth(11);
-    let patreon = this.add.image(220, 48, "patreon").setInteractive();
-    patreon.setScale(GLOBAL_SCALE / 2);
-    patreon.on("pointerdown", () => {
-      window.location.href = "https://www.patreon.com/drawvid";
-    });
-    patreon.setDepth(11);
+    // let patreon = this.add.image(220, 48, "patreon").setInteractive();
+    // patreon.setScale(GLOBAL_SCALE / 2);
+    // patreon.on("pointerdown", () => {
+    //   window.location.href = "https://www.patreon.com/drawvid";
+    // });
+    // patreon.setDepth(11);
 
     let loungeButton = this.add
       .image(
