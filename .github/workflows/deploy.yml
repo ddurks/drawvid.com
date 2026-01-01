@@ -61,6 +61,10 @@ jobs:
               PATHS="$PATHS /index.html"
               echo "paths=$PATHS" >> $GITHUB_OUTPUT
             fi
+          fi
+      
+      - name: Invalidate CloudFront cache
+        run: |
           PATHS="${{ steps.changed-files.outputs.paths }}"
 
           # Create invalidation
