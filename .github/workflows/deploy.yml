@@ -41,43 +41,11 @@ jobs:
             --include "*.html" \
             --cache-control "public, max-age=3600"
 
-      - name: Get list of changed files
-        id: changed-files
-        run: |
-          # Get changed files from the push
-          if [ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]; then
-            # First push - invalidate everything
-            echo "paths=/*" >> $GITHUB_OUTPUT
-          else
-            CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} 2>/dev/null | grep -v "^\.github/" | grep -v "^\.git/" || echo "")
-            
-            # If git diff fails or no files changed, invalidate root paths
-            if [ -z "$CHANGED_FILES" ]; then
-              echo "paths=/* /index.html" >> $GITHUB_OUTPUT
-            else
-              # Convert file paths to CloudFront invalidation paths
-              PATHS=$(echo "$CHANGED_FILES" | sed 's|^|/|' | tr '\n' ' ')
-              # Always include index.html in case routing changed
-              PATHS="$PATHS /index.html"
-              echo "paths=$PATHS" >> $GITHUB_OUTPUT
-            fi
-          fi
-
       - name: Invalidate CloudFront cache
         run: |
-          PATHS="${{ steps.changed-files.outputs.paths }}"
+          # Invalidate everything - simple and reliable
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
 
-          # Handle wildcards vs specific paths differently
-          if [[ "$PATHS" == "/*" ]]; then
-            # Wildcard - pass as single quoted argument
-            aws cloudfront create-invalidation \
-              --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-              --paths "/*"
-          else
-            # Specific paths - pass unquoted so they split into separate arguments
-            aws cloudfront create-invalidation \
-              --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-              --paths $PATHS
-          fi
-
-          echo "Invalidated paths: $PATHS"
+          echo "Invalidated all paths (/*)"
