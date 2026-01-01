@@ -1,0 +1,68 @@
+name: Deploy to S3 and CloudFront
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Sync files to S3
+        run: |
+          aws s3 sync . s3://drawvid.com \
+            --delete \
+            --exclude ".git/*" \
+            --exclude ".github/*" \
+            --exclude "node_modules/*" \
+            --exclude ".DS_Store" \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "*.html" \
+            --exclude "*.xml"
+
+          # Sync HTML files with shorter cache (they change more often)
+          aws s3 sync . s3://drawvid.com \
+            --exclude "*" \
+            --include "*.html" \
+            --cache-control "public, max-age=3600"
+
+      - name: Get list of changed files
+        id: changed-files
+        run: |
+          # Get changed files from the push
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -v "^\.github/" | grep -v "^\.git/" || echo "")
+
+          # If no files or this is the first push, invalidate everything
+          if [ -z "$CHANGED_FILES" ]; then
+            echo "paths=/*" >> $GITHUB_OUTPUT
+          else
+            # Convert file paths to CloudFront invalidation paths
+            PATHS=$(echo "$CHANGED_FILES" | sed 's|^|/|' | tr '\n' ' ')
+            # Always include index.html in case routing changed
+            PATHS="$PATHS /index.html"
+            echo "paths=$PATHS" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Invalidate CloudFront cache
+        run: |
+          PATHS="${{ steps.changed-files.outputs.paths }}"
+
+          # Create invalidation
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths $PATHS
+
+          echo "Invalidated paths: $PATHS"
