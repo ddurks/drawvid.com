@@ -521,7 +521,7 @@ class DrawvidDotCom extends Phaser.Scene {
       .setInteractive();
     loungeButton.setScale(GLOBAL_SCALE);
     loungeButton.on("pointerdown", () => {
-      window.location.href = "http://onlinelounge.drawvid.com";
+      window.location.href = "/code/onlinelounge_2.0/";
     });
     loungeButton.setDepth(10);
 
