@@ -1,42 +1,45 @@
 <!DOCTYPE html>
 <html>
-<head>
+  <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+    />
     <title>drawvid.com</title>
     <style>
-        body {
-            background-color: #639BFF;
-            margin: 0;
-        }
+      body {
+        background-color: #639bff;
+        margin: 0;
+      }
 
-        #phaser-div {
-            position: fixed;
-            top:0;
-        }
+      #phaser-div {
+        position: fixed;
+        top: 0;
+      }
 
-        .image-container {
-            width: 300px;
-            height: 300px;
-            background: #eee;
-            text-align: center;
-            line-height: 300px;
-            display: none;
-        }
+      .image-container {
+        width: 300px;
+        height: 300px;
+        background: #eee;
+        text-align: center;
+        line-height: 300px;
+        display: none;
+      }
 
-        .image-container img {
-            vertical-align: middle;
-            z-index: 10000;
-        }
+      .image-container img {
+        vertical-align: middle;
+        z-index: 10000;
+      }
     </style>
-    <link rel='icon', href='/assets/favicon.ico'>
+    <link rel="icon" , href="/assets/favicon.ico" />
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.js"></script>
     <script src="/src/smilers.js"></script>
-</head>
-<body>
+  </head>
+  <body>
     <div class="image-container">
-        <img id="artImg">
+      <img id="artImg" />
     </div>
     <div id="phaser-div"></div>
-</body>
+  </body>
 </html>
