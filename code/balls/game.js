@@ -18,6 +18,19 @@
 
 const GameState = { AIM: "aim", PLAY: "play", LANDED: "landed" };
 const CameraViewMode = { PLAY: "play", SHOT_REVIEW: "shotReview" };
+
+const PALETTE = {
+  YELLOW: "#ffeb3b",
+  GREEN_DARK: "#3a6b35",
+  GREEN_LIGHT: "rgba(144,200,150,0.85)",
+};
+
+const UNITS = {
+  MS_TO_MPH: 2.237, // m/s → mph
+  M_TO_FEET: 3.28084, // m → feet
+  M_TO_YARDS: 1.094, // m → yards
+};
+
 // ─── CONFIGURATION ──────────────────────────────────────────────────────────
 
 const CONFIG = {
@@ -28,7 +41,7 @@ const CONFIG = {
     UI_SCALE: window.innerWidth < 1024 ? 2 / 3 : 1.0,
   },
   ENVIRONMENT: {
-    ENV_TEXTURE_PATH: "assets/puresky.env",
+    ENV_TEXTURE_PATH: "assets/3d/puresky.env",
     SKYBOX_ENABLED: true,
     SKYBOX_SIZE: 1000,
     SKYBOX_PBRBRIGHT: 0,
@@ -39,8 +52,8 @@ const CONFIG = {
     SUBDIVISIONS: 50,
     FRICTION: 0.4,
     RESTITUTION: 0.3,
-    TEXTURE_PATH: "assets/ground.png",
-    NORMAL_MAP_PATH: "assets/groundnormals.png",
+    TEXTURE_PATH: "assets/texture/ground.png",
+    NORMAL_MAP_PATH: "assets/texture/groundnormals.png",
     UV_TILING: 500,
   },
   BALL: {
@@ -76,8 +89,8 @@ const CONFIG = {
     STANDARD_SPECULAR: 0.03,
   },
   AIM_VIEW: {
-    CAMERA_DISTANCE: 15,
-    CAMERA_HEIGHT: 8,
+    CAMERA_DISTANCE: 10,
+    CAMERA_HEIGHT: 5,
     CAMERA_HEIGHT_MIN: 3,
     CAMERA_HEIGHT_MAX: 15,
     MOUSE_ROTATION_SENSITIVITY: 0.005,
@@ -133,17 +146,22 @@ const CONFIG = {
   },
   PINS: {
     GREEN_RADIUS: 30,
-    PIN_HEIGHT: 4.0,
-    PIN_DIAMETER: 0.3,
-    PIN_Y_OFFSET: 2.0,
-    GREEN_Y_OFFSET: 0.5,
-    GREEN_TEXTURE_PATH: "assets/puttingground.png",
-    GREEN_NORMAL_MAP_PATH: "assets/puttinggroundnormals.png",
+    PIN_HEIGHT: 12.0,
+    PIN_DIAMETER: 0.2,
+    PIN_Y_OFFSET: 6.0,
+    GREEN_Y_OFFSET: 0.001,
+    GREEN_TEXTURE_PATH: "assets/texture/puttingground.png",
+    GREEN_NORMAL_MAP_PATH: "assets/texture/puttinggroundnormals.png",
     GREEN_UV_TILING: 10,
     PIN_COLLISION_RADIUS: 0.3,
     PIN_COLLISION_MIN_SPEED: 0.5,
     PIN_FLASH_SCALE_Y: 2,
     PIN_FLASH_DURATION_MS: 100,
+    FLAG_WIDTH: 4.0,
+    FLAG_HEIGHT: 2.4,
+    HOLE_RADIUS: 0.8,
+    HOLE_Y_OFFSET: 0.35,
+    FLAG_WIND_THRESHOLD: 2.235, // ~5 mph in m/s
   },
   TRAIL: {
     MAX_POINTS: 60,
@@ -171,8 +189,8 @@ const CONFIG = {
     MAX_LATERAL_RATIO: 0.45,
     MAX_LATERAL_FORCE: 10,
     AIM_SELECTION_ANGLE_RAD: 0.25,
-    IDEAL_COLOR: "#fff5a8",
-    HIT_COLOR: "#ffd54f",
+    IDEAL_COLOR: PALETTE.YELLOW,
+    HIT_COLOR: PALETTE.YELLOW,
     SPIN_COLORS: ["#55d6ff", "#8cff66", "#ff8cf5", "#ff9966"],
   },
   WIND: {
@@ -185,9 +203,8 @@ const CONFIG = {
     COMPASS_RIGHT: 15,
   },
   CLOUDS: {
-    TEXTURE_PATH: "assets/clouds.png",
-    SPRITESHEET_COLS: 8,
-    SPRITESHEET_FRAME_SIZE: 256,
+    TEXTURE_DIR: "assets/clouds",
+    TEXTURE_COUNT: 10,
     COUNT: 25,
     HORIZON_DISTANCE: 300, // Radius around player where clouds spawn
     HORIZON_HEIGHT: 100, // Height above ball where clouds float
@@ -251,25 +268,25 @@ class Wind {
 class CloudSystem {
   constructor(scene, camera = null) {
     this.scene = scene;
-    this.camera = camera; // Store camera reference for positioning
+    this.camera = camera;
     this.clouds = [];
-    this.cloudTexture = null;
+    this.cloudTextures = [];
     this.isInitialized = false;
     this.init();
   }
 
   init() {
     try {
-      // Load spritesheet texture - BABYLON.Texture handles async loading internally
-      this.cloudTexture = new BABYLON.Texture(
-        CONFIG.CLOUDS.TEXTURE_PATH,
-        this.scene,
-      );
-      this.cloudTexture.uScale = 1 / CONFIG.CLOUDS.SPRITESHEET_COLS;
-      this.cloudTexture.hasAlpha = true; // Enable transparency for spritesheet
-      this.cloudTexture.alphaMode = BABYLON.Engine.ALPHA_BLEND;
+      // Load all individual cloud textures
+      for (let i = 1; i <= CONFIG.CLOUDS.TEXTURE_COUNT; i++) {
+        const tex = new BABYLON.Texture(
+          `${CONFIG.CLOUDS.TEXTURE_DIR}/clouds-${i}.png`,
+          this.scene,
+        );
+        tex.hasAlpha = true;
+        this.cloudTextures.push(tex);
+      }
 
-      // Create clouds immediately
       for (let i = 0; i < CONFIG.CLOUDS.COUNT; i++) {
         this.createCloud(i);
       }
@@ -281,35 +298,28 @@ class CloudSystem {
   }
 
   createCloud(index) {
-    // Create a plane for this cloud
     const cloud = BABYLON.MeshBuilder.CreatePlane(
       `cloud_${index}`,
       { width: CONFIG.CLOUDS.CLOUD_SIZE, height: CONFIG.CLOUDS.CLOUD_SIZE },
       this.scene,
     );
 
-    // Billboard towards camera
     cloud.billboardMode = BABYLON.Mesh.BILLBOARDMODE_ALL;
+    cloud.alwaysSelectAsActiveMesh = true;
 
-    // Create unique material for this cloud
     const mat = new BABYLON.StandardMaterial(`cloudMat_${index}`, this.scene);
 
-    // Clone the texture for this material so each cloud can have its own UV offset
-    const cloudTexture = this.cloudTexture.clone();
-    cloudTexture.uScale = 1 / CONFIG.CLOUDS.SPRITESHEET_COLS;
-
-    // Set random frame from spritesheet
-    const frameIndex = Math.floor(
-      Math.random() * CONFIG.CLOUDS.SPRITESHEET_COLS,
-    );
-    cloudTexture.uOffset = frameIndex / CONFIG.CLOUDS.SPRITESHEET_COLS;
-
-    mat.diffuseTexture = cloudTexture;
-    mat.emissiveColor = new BABYLON.Color3(0, 0, 0); // No self-illumination - matte texture
-    mat.specularColor = new BABYLON.Color3(0, 0, 0); // No specularity for matte finish
+    // Pick a random texture from the loaded set
+    const tex =
+      this.cloudTextures[Math.floor(Math.random() * this.cloudTextures.length)];
+    mat.emissiveTexture = tex; // unlit color from texture pixels
+    mat.emissiveColor = new BABYLON.Color3(1, 1, 1); // white multiplier — show full texture color
+    mat.diffuseTexture = tex; // needed so alpha is read from the texture
+    mat.diffuseColor = new BABYLON.Color3(0, 0, 0); // kill lighting contribution on diffuse
+    mat.specularColor = new BABYLON.Color3(0, 0, 0);
+    mat.useAlphaFromDiffuseTexture = true; // use texture alpha channel for transparency
+    mat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATESTANDBLEND;
     mat.backFaceCulling = false;
-    mat.alphaMode = BABYLON.Engine.ALPHA_BLEND;
-    mat.hasAlpha = true; // Ensure material uses alpha channel
 
     cloud.material = mat;
 
@@ -334,7 +344,7 @@ class CloudSystem {
   }
 
   update(ballPos, wind) {
-    if (!this.cloudTexture) {
+    if (!this.cloudTextures.length) {
       return;
     }
 
@@ -359,9 +369,11 @@ class CloudSystem {
         // Calculate direction cloud drifted away
         const driftAngle = Math.atan2(driftZ, driftX);
 
-        // Respawn on opposite side (180° opposite)
-        const oppositeAngle = driftAngle + Math.PI;
-        const respawnDistance = CONFIG.CLOUDS.HORIZON_DISTANCE * 0.8;
+        // Respawn on the opposite side with a small random angle spread
+        const oppositeAngle =
+          driftAngle + Math.PI + (Math.random() - 0.5) * 1.2;
+        const respawnDistance =
+          CONFIG.CLOUDS.HORIZON_DISTANCE * (0.7 + Math.random() * 0.3);
         const minHeight = CONFIG.CLOUDS.MIN_HEIGHT;
         const maxHeight = CONFIG.CLOUDS.HORIZON_HEIGHT * 1.5;
 
@@ -380,7 +392,8 @@ class CloudSystem {
       cloud.mesh.dispose();
     });
     this.clouds = [];
-    if (this.cloudTexture) this.cloudTexture.dispose();
+    this.cloudTextures.forEach((t) => t.dispose());
+    this.cloudTextures = [];
   }
 }
 
@@ -444,7 +457,7 @@ const Utils = {
 
   // Convert meters to yards (1 meter ≈ 1.094 yards)
   metersToYards(meters) {
-    return Math.round(meters * 1.094);
+    return Math.round(meters * UNITS.M_TO_YARDS);
   },
 
   // Format distance for display (yards with ' notation)
@@ -501,7 +514,7 @@ class TrajectoryArrow {
     try {
       const result = await BABYLON.SceneLoader.ImportMeshAsync(
         "",
-        "assets/",
+        "assets/3d/",
         "arrow.glb",
         this.scene,
       );
@@ -527,6 +540,15 @@ class TrajectoryArrow {
     if (!this.isLoaded || !this.arrowTemplate) return;
 
     if (this.arrow) {
+      // Remove from shadow casters before disposing
+      if (this.scene.shadowGenerator) {
+        const meshes = [this.arrow, ...this.arrow.getChildMeshes()];
+        meshes.forEach((mesh) => {
+          if (mesh) {
+            this.scene.shadowGenerator.removeShadowCaster(mesh, true);
+          }
+        });
+      }
       this.arrow.dispose();
     }
 
@@ -548,6 +570,16 @@ class TrajectoryArrow {
       this.currentColor = this.pendingColor;
       this.pendingColor = null;
       this.applyColor();
+    }
+
+    // Register arrow as shadow caster (after material is applied)
+    if (this.scene.shadowGenerator) {
+      const meshes = [this.arrow, ...this.arrow.getChildMeshes()];
+      meshes.forEach((mesh) => {
+        if (mesh) {
+          this.scene.shadowGenerator.addShadowCaster(mesh, true);
+        }
+      });
     }
 
     // Store angle for tilt calculation
@@ -607,13 +639,14 @@ class TrajectoryArrow {
     // Get all meshes in the arrow hierarchy
     try {
       const meshes = [this.arrow, ...this.arrow.getChildMeshes()];
+      const color = this.currentColor.clone();
 
       meshes.forEach((mesh) => {
         if (!mesh) return;
 
         // Create or update material
         let mat = mesh.material;
-        if (!mat) {
+        if (!mat || !(mat instanceof BABYLON.StandardMaterial)) {
           mat = new BABYLON.StandardMaterial(
             "arrowMat_" + Math.random(),
             this.scene,
@@ -621,27 +654,153 @@ class TrajectoryArrow {
           mesh.material = mat;
         }
 
-        // Apply color to multiple channels for visibility
-        const color = this.currentColor.clone();
+        // ─── CEL SHADING ──────────────────────────────────────────────
+        // Flat, cartoon-like appearance with reduced specular highlights
+        mat.diffuseColor = color;
+        mat.specularColor = new BABYLON.Color3(0, 0, 0); // No specular
+        mat.ambientColor = new BABYLON.Color3(0.6, 0.6, 0.6); // Muted ambient
+        mat.emissiveColor = color.scale(0.3); // Subtle glow for depth
 
-        // Set diffuse color (main surface color)
-        if (mat.diffuseColor !== undefined) {
-          mat.diffuseColor = color;
-        }
-
-        // Set emissive color at full brightness
-        if (mat.emissiveColor !== undefined) {
-          mat.emissiveColor = color.clone();
-        }
-
-        // Set specular for extra visibility
-        if (mat.specularColor !== undefined) {
-          mat.specularColor = color.clone();
-        }
+        // ─── OUTLINE ──────────────────────────────────────────────────
+        // Black outline for cel-shaded effect
+        mesh.outlineWidth = 0.15;
+        mesh.outlineColor = new BABYLON.Color3(0, 0, 0);
+        mat.backFaceCulling = false; // Needed for outline rendering
       });
     } catch (error) {
       console.warn("Error applying arrow color:", error);
     }
+  }
+}
+
+// ─── CLUB SELECTOR ──────────────────────────────────────────────────────────
+/**
+ * Manages club selection logic and auto-selection based on distance
+ */
+class ClubSelector {
+  constructor(circleUIManager = null) {
+    this.circleUIManager = circleUIManager;
+    this.currentClub = 12; // Default to driver
+    this.manuallySelectedClub = false; // True if user manually picked a club
+    this.clubButtonsAttached = false; // Track if button listeners are set up
+  }
+
+  /**
+   * Reset to driver when entering aim mode
+   */
+  reset() {
+    this.currentClub = 12;
+    this.manuallySelectedClub = false;
+    this.clubButtonsAttached = false;
+  }
+
+  /**
+   * Find best club for a given distance
+   */
+  findBestClubForDistance(distance) {
+    let bestClubId = 12; // Default to driver
+    let bestDifference = Math.abs(
+      this.getPredictedDistanceForClub(ClubData.getClub(12)) - distance,
+    );
+
+    for (let i = 0; i < ClubData.CLUBS.length; i++) {
+      const club = ClubData.CLUBS[i];
+      const predicted = this.getPredictedDistanceForClub(club);
+      const difference = Math.abs(predicted - distance);
+      if (difference < bestDifference) {
+        bestDifference = difference;
+        bestClubId = i;
+      }
+    }
+    return bestClubId;
+  }
+
+  /**
+   * Get predicted max distance for a club
+   */
+  getPredictedDistanceForClub(club) {
+    return club.maxDistance;
+  }
+
+  /**
+   * Auto-select best club if user hasn't manually picked one
+   */
+  autoSelectClubIfNeeded(distance) {
+    if (!this.manuallySelectedClub) {
+      this.currentClub = this.findBestClubForDistance(distance);
+      return true; // Club changed
+    }
+    return false; // Club unchanged
+  }
+
+  /**
+   * Manually set club and prevent auto-selection until camera rotates
+   */
+  selectClub(clubId) {
+    this.currentClub = Math.max(0, Math.min(12, clubId));
+    this.manuallySelectedClub = true;
+  }
+
+  /**
+   * Allow auto-selection again (e.g., after camera rotation)
+   */
+  enableAutoSelect() {
+    this.manuallySelectedClub = false;
+  }
+
+  /**
+   * Update UI with current club info
+   */
+  updateUI() {
+    if (!this.circleUIManager) return;
+
+    const club = ClubData.getClub(this.currentClub);
+    const estimatedDistance = Utils.metersToYards(club.maxDistance);
+
+    this.circleUIManager.updateClub(
+      this.currentClub,
+      club.name,
+      estimatedDistance,
+    );
+
+    // Attach button listeners if not already done
+    if (!this.clubButtonsAttached) {
+      const buttons = this.circleUIManager.getClubButtons();
+      if (buttons) {
+        if (buttons.upBtn) {
+          buttons.upBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.selectClub((this.currentClub - 1 + 13) % 13);
+            this.updateUI();
+          };
+        }
+        if (buttons.downBtn) {
+          buttons.downBtn.onclick = (e) => {
+            e.stopPropagation();
+            this.selectClub((this.currentClub + 1) % 13);
+            this.updateUI();
+          };
+        }
+        this.clubButtonsAttached = true;
+      }
+    }
+  }
+
+  /**
+   * Handle keyboard input for club selection
+   */
+  handleKeyPress(key) {
+    if (key >= "0" && key <= "9") {
+      this.selectClub(parseInt(key));
+      return true;
+    } else if (key === "q") {
+      this.selectClub((this.currentClub + 1) % 13);
+      return true;
+    } else if (key === "e") {
+      this.selectClub((this.currentClub - 1 + 13) % 13);
+      return true;
+    }
+    return false;
   }
 }
 
@@ -669,55 +828,23 @@ class AimView {
     this.isActive = false;
     this.cameraDistance = CONFIG.AIM_VIEW.CAMERA_DISTANCE;
     this.cameraHeight = CONFIG.AIM_VIEW.CAMERA_HEIGHT;
-    this.cameraRotation = 0;
-    this.currentClub = 12;
-    this.lastLoggedClubId = -1; // Track for logging only on changes
-    this.manuallySelectedClub = false; // Track if user manually selected a club
-    this.clubButtonsAttached = false; // Track if club circle buttons have been set up
+    this.cameraRotation = 0; // Face toward center from north side
+
+    // Use ClubSelector to manage club logic
+    this.clubSelector = new ClubSelector(circleUIManager);
+
     this.trajectoryArrow = new TrajectoryArrow(scene, ballMesh.position);
     this.touchStartX = 0;
     this.touchStartY = 0;
     this.lastMouseX = 0;
     this.lastMouseY = 0;
     this.isDragging = false;
+
+    // Initialize event handlers once so removeEventListener can find them
+    this.initializeEventHandlers();
   }
 
-  activate() {
-    this.isActive = true;
-    this.currentClub = 12; // Reset to driver
-    this.manuallySelectedClub = false; // Reset auto-selection on new aim
-    this.lastLoggedClubId = -1; // Reset logging tracker
-    this.clubButtonsAttached = false; // Reset button attachment flag
-    this.camera.fov = CONFIG.CAMERA.FOV_AIM;
-
-    // Character faces camera in aim mode (smoothly rotates via updateRotation in render loop)
-    this.golfBallGuy.setFacingCamera(this.camera.position);
-
-    this.setupOrbitControls();
-    this.trajectoryArrow.create();
-    if (this.circleUIManager) {
-      this.circleUIManager.showClubCircle();
-      this.circleUIManager.showCompassCircle();
-      this.circleUIManager.hidePowerCircle();
-      // Keep stats circle visible at all times (shows yardage in aim mode too)
-    }
-    this.updateUI();
-  }
-
-  deactivate() {
-    this.isActive = false;
-    this.camera.fov = CONFIG.CAMERA.FOV_PLAY;
-    this.removeOrbitControls();
-    this.trajectoryArrow.dispose();
-    if (this.circleUIManager) {
-      this.circleUIManager.hideClubCircle();
-      this.circleUIManager.showStatsCircle();
-      this.circleUIManager.showCompassCircle();
-      this.circleUIManager.showPowerCircle();
-    }
-  }
-
-  setupOrbitControls() {
+  initializeEventHandlers() {
     this.onPointerDown = (e) => {
       if (!this.isActive) return;
       this.isDragging = true;
@@ -730,8 +857,8 @@ class AimView {
     this.onPointerMove = (e) => {
       if (!this.isDragging || !this.isActive) return;
 
-      // User is rotating camera - re-enable auto-select so it tracks the new aim
-      this.manuallySelectedClub = false;
+      // User is rotating camera - allow auto-select to track new aim
+      this.clubSelector.enableAutoSelect();
 
       const deltaX = e.clientX - this.lastMouseX;
       const deltaY = e.clientY - this.lastMouseY;
@@ -770,14 +897,15 @@ class AimView {
                 pickedMesh === pinData.mesh ||
                 pickedMesh?.parent === pinData.mesh
               ) {
-                // Pin clicked! Auto-select club for this distance
+                // Pin clicked! Use clubSelector to auto-pick best club
                 const distanceToPin = BABYLON.Vector3.Distance(
                   this.ballMesh.position,
                   pinData.mesh.position,
                 );
-                const bestClubId = this.findBestClubForDistance(distanceToPin);
-                this.currentClub = bestClubId;
-                this.updateUI();
+                const bestClubId =
+                  this.clubSelector.findBestClubForDistance(distanceToPin);
+                this.clubSelector.selectClub(bestClubId);
+                this.clubSelector.updateUI();
                 return; // Don't check for ball click if pin was clicked
               }
             }
@@ -808,21 +936,58 @@ class AimView {
 
     this.onKeyDown = (e) => {
       if (!this.isActive) return;
-      if (e.key >= "0" && e.key <= "9") {
-        this.currentClub = parseInt(e.key);
-        this.manuallySelectedClub = true;
-        this.updateUI();
-      } else if (e.key === "q") {
-        this.currentClub = (this.currentClub + 1) % 13;
-        this.manuallySelectedClub = true;
-        this.updateUI();
-      } else if (e.key === "e") {
-        this.currentClub = (this.currentClub - 1 + 13) % 13;
-        this.manuallySelectedClub = true;
-        this.updateUI();
+      if (this.clubSelector.handleKeyPress(e.key)) {
+        this.clubSelector.updateUI();
       }
     };
+  }
 
+  // Getter for backward compatibility
+  get currentClub() {
+    return this.clubSelector.currentClub;
+  }
+
+  set currentClub(value) {
+    this.clubSelector.currentClub = value;
+  }
+
+  set manuallySelectedClub(value) {
+    this.clubSelector.manuallySelectedClub = value;
+  }
+
+  get manuallySelectedClub() {
+    return this.clubSelector.manuallySelectedClub;
+  }
+
+  activate() {
+    this.isActive = true;
+    this.clubSelector.reset(); // Reset club selection
+    this.camera.fov = CONFIG.CAMERA.FOV_AIM;
+
+    // Character faces camera in aim mode (smoothly rotates via updateRotation in render loop)
+    this.golfBallGuy.setFacingCamera(this.camera.position);
+
+    this.setupOrbitControls();
+    this.trajectoryArrow.create();
+    if (this.circleUIManager) {
+      this.circleUIManager.showCompassCircle();
+      this.circleUIManager.hidePowerCircle();
+    }
+    this.clubSelector.updateUI();
+  }
+
+  deactivate() {
+    this.isActive = false;
+    this.camera.fov = CONFIG.CAMERA.FOV_PLAY;
+    this.removeOrbitControls();
+    this.trajectoryArrow.dispose();
+    if (this.circleUIManager) {
+      this.circleUIManager.showCompassCircle();
+      this.circleUIManager.showPowerCircle();
+    }
+  }
+
+  setupOrbitControls() {
     // Listen to canvas pointer events (same as InputHandler)
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
@@ -856,27 +1021,24 @@ class AimView {
     this.camera.setTarget(ballPos.add(new BABYLON.Vector3(0, 1, 0)));
 
     // Always get the current club (will be used for arrow and calculations)
-    const club = ClubData.getClub(this.currentClub);
+    const club = ClubData.getClub(this.clubSelector.currentClub);
 
     // Calculate distance to nearest pin and auto-select best club
     const pins = this.game?.scene?.pinManager?.pins;
 
     if (pins && pins.length > 0) {
       try {
-        const distanceToPin = this.getDistanceToNearestPin(ballPos) * 1.094; // Convert meters to yards
-        const bestClubId = this.findBestClubForDistance(distanceToPin);
+        const distanceToPin =
+          this.getDistanceToNearestPin(ballPos) * UNITS.M_TO_YARDS;
 
-        // Track club changes (without logging)
-        this.lastLoggedClubId = bestClubId;
-
-        // Auto-select best club ONLY if user hasn't manually selected one
-        if (!this.manuallySelectedClub) {
-          this.currentClub = bestClubId;
-          this.updateUI(); // Update UI to show new club
+        // Auto-select best club if user hasn't manually picked one
+        if (this.clubSelector.autoSelectClubIfNeeded(distanceToPin)) {
+          this.clubSelector.updateUI(); // Update UI if club changed
         }
 
         // Determine arrow color based on prediction
-        const predictedDistance = this.getPredictedDistance(club);
+        const predictedDistance =
+          this.clubSelector.getPredictedDistanceForClub(club);
         const arrowColor = this.getArrowColor(predictedDistance, distanceToPin);
         if (
           this.trajectoryArrow &&
@@ -893,53 +1055,18 @@ class AimView {
   }
 
   getDistanceToNearestPin(ballPos) {
-    // Access pins via pinManager which exists in the scene
-    const pins = this.game?.scene?.pinManager?.pins;
-    if (!pins || pins.length === 0) return 0;
+    const pinManager = this.game?.scene?.pinManager;
+    if (!pinManager) return 0;
 
-    // Use aim direction (camera rotation) to find which pin we're aiming at
-    const aimDirection = this.cameraRotation;
-    // Aim direction is opposite camera direction (ball faces away from camera)
-    const aimVec = new BABYLON.Vector3(
-      Math.sin(aimDirection + Math.PI),
-      0,
-      Math.cos(aimDirection + Math.PI),
+    // Try to get pin aligned with aim direction
+    const { distance: targetDist, pin: targetPin } = pinManager.getTargetPin(
+      ballPos,
+      this.cameraRotation,
     );
-
-    let bestPin = null;
-    let smallestAngle = Math.PI;
-
-    for (let i = 0; i < pins.length; i++) {
-      const pin = pins[i];
-      const pinPos = pin.mesh.position;
-      const toPin = pinPos.subtract(ballPos);
-      const toPinFlat = toPin.clone();
-      toPinFlat.y = 0;
-
-      if (toPinFlat.length() === 0) continue;
-
-      toPinFlat.normalize();
-
-      // Calculate angle between aim direction and pin direction
-      const dotProd = BABYLON.Vector3.Dot(aimVec, toPinFlat);
-      const angle = Math.acos(Math.max(-1, Math.min(1, dotProd)));
-
-      if (angle < smallestAngle) {
-        smallestAngle = angle;
-        bestPin = pin;
-      }
-    }
-
-    // Return most-aligned pin's distance if within 90° cone (in front)
-    if (bestPin && smallestAngle < Math.PI / 2) {
-      const selectedDist = BABYLON.Vector3.Distance(
-        ballPos,
-        bestPin.mesh.position,
-      );
-      return selectedDist;
-    }
+    if (targetPin) return targetDist;
 
     // Fallback to nearest pin if nothing in front
+    const pins = pinManager.pins;
     const nearestPin = pins.reduce((nearest, pin) => {
       const dist = BABYLON.Vector3.Distance(ballPos, pin.mesh.position);
       return !nearest || dist < nearest.dist ? { dist, pin } : nearest;
@@ -948,29 +1075,11 @@ class AimView {
   }
 
   findBestClubForDistance(distance) {
-    let bestClubId = 12; // Default to driver
-    let bestDifference = Math.abs(
-      this.getPredictedDistanceForClub(ClubData.getClub(12)) - distance,
-    );
-
-    for (let i = 0; i < ClubData.CLUBS.length; i++) {
-      const club = ClubData.CLUBS[i];
-      const predicted = this.getPredictedDistanceForClub(club);
-      const difference = Math.abs(predicted - distance);
-      if (difference < bestDifference) {
-        bestDifference = difference;
-        bestClubId = i;
-      }
-    }
-    return bestClubId;
-  }
-
-  getPredictedDistanceForClub(club) {
-    return club.maxDistance;
+    return this.clubSelector.findBestClubForDistance(distance);
   }
 
   getPredictedDistance(club) {
-    return this.getPredictedDistanceForClub(club);
+    return this.clubSelector.getPredictedDistanceForClub(club);
   }
 
   getArrowColor(predictedDistance, distanceToPin) {
@@ -990,43 +1099,7 @@ class AimView {
   }
 
   updateUI() {
-    const club = ClubData.getClub(this.currentClub);
-
-    // Calculate estimated distance for this club at full power
-    const estimatedDistance = Utils.metersToYards(club.maxDistance);
-
-    // Update the club circle through the manager
-    if (this.circleUIManager) {
-      this.circleUIManager.updateClub(
-        this.currentClub,
-        club.name,
-        estimatedDistance,
-      );
-
-      // Attach button listeners if not already attached
-      if (!this.clubButtonsAttached) {
-        const buttons = this.circleUIManager.getClubButtons();
-        if (buttons) {
-          if (buttons.upBtn) {
-            buttons.upBtn.onclick = (e) => {
-              e.stopPropagation();
-              this.currentClub = (this.currentClub - 1 + 13) % 13;
-              this.manuallySelectedClub = true;
-              this.updateUI();
-            };
-          }
-          if (buttons.downBtn) {
-            buttons.downBtn.onclick = (e) => {
-              e.stopPropagation();
-              this.currentClub = (this.currentClub + 1) % 13;
-              this.manuallySelectedClub = true;
-              this.updateUI();
-            };
-          }
-          this.clubButtonsAttached = true;
-        }
-      }
-    }
+    this.clubSelector.updateUI();
   }
 
   hideClubUI() {
@@ -1605,6 +1678,7 @@ class FollowCamera {
   configure() {
     this.camera.fov = CONFIG.CAMERA.FOV_PLAY;
     this.camera.minZ = 0.01; // Allow rendering objects very close to camera
+    this.camera.maxZ = 3000; // Increased for better shot overview visibility
     this.camera.inertia = 0;
     this.camera.angularSensibility = 0;
     this.camera.keysUp = [];
@@ -1696,39 +1770,32 @@ class FollowCamera {
     this.targetCameraAngle = normalized;
   }
 
-  update() {
+  update(dt) {
     if (!this.targetMesh) return;
 
-    // Smoothly lerp all offsets
-    this.offsetX = BABYLON.Scalar.Lerp(
-      this.offsetX,
-      this.targetOffsetX,
-      this.smoothSpeed,
-    );
-    this.offsetY = BABYLON.Scalar.Lerp(
-      this.offsetY,
-      this.targetOffsetY,
-      this.smoothSpeed,
-    );
-    this.offsetZ = BABYLON.Scalar.Lerp(
-      this.offsetZ,
-      this.targetOffsetZ,
-      this.smoothSpeed,
-    );
+    // Exponential smoothing — frame-rate independent
+    // f approaches 1 as dt grows, giving consistent feel at any fps
+    const f = 1 - Math.exp(-this.smoothSpeed * 60 * dt);
+    const fAngle = 1 - Math.exp(-this.cameraAngleLerpSpeed * 60 * dt);
+    const fPos = 1 - Math.exp(-CONFIG.CAMERA.POSITION_LERP_SPEED * 60 * dt);
+
+    this.offsetX = BABYLON.Scalar.Lerp(this.offsetX, this.targetOffsetX, f);
+    this.offsetY = BABYLON.Scalar.Lerp(this.offsetY, this.targetOffsetY, f);
+    this.offsetZ = BABYLON.Scalar.Lerp(this.offsetZ, this.targetOffsetZ, f);
     this.lookOffsetY = BABYLON.Scalar.Lerp(
       this.lookOffsetY,
       this.targetLookOffsetY,
-      this.smoothSpeed,
+      f,
     );
     this.lookOffsetZ = BABYLON.Scalar.Lerp(
       this.lookOffsetZ,
       this.targetLookOffsetZ,
-      this.smoothSpeed,
+      f,
     );
     this.cameraAngle = BABYLON.Scalar.Lerp(
       this.cameraAngle,
       this.targetCameraAngle,
-      this.cameraAngleLerpSpeed,
+      fAngle,
     );
 
     const referencePoint =
@@ -1766,31 +1833,10 @@ class FollowCamera {
       }
     }
 
-    // Clamp camera distance in PLAY view mode
-    if (this.viewMode === CameraViewMode.PLAY) {
-      const distFromRef = BABYLON.Vector3.Distance(
-        new BABYLON.Vector3(newPosition.x, referencePoint.y, newPosition.z),
-        referencePoint,
-      );
-      if (distFromRef > CONFIG.FOLLOW_CAMERA.PLAY_VIEW_MAX_DISTANCE) {
-        const direction = new BABYLON.Vector3(
-          newPosition.x - referencePoint.x,
-          0,
-          newPosition.z - referencePoint.z,
-        ).normalize();
-        newPosition.x =
-          referencePoint.x +
-          direction.x * CONFIG.FOLLOW_CAMERA.PLAY_VIEW_MAX_DISTANCE;
-        newPosition.z =
-          referencePoint.z +
-          direction.z * CONFIG.FOLLOW_CAMERA.PLAY_VIEW_MAX_DISTANCE;
-      }
-    }
-
     this.lastPosition = BABYLON.Vector3.Lerp(
       this.lastPosition,
       newPosition,
-      CONFIG.CAMERA.POSITION_LERP_SPEED,
+      fPos,
     );
     this.camera.position = this.lastPosition;
 
@@ -1877,16 +1923,19 @@ class GrassSystem {
     return instance;
   }
 
-  scatter(groundSize = 200, density = 5, greenPositions = []) {
-    // Scatter grass blades across terrain, avoiding greens
+  scatter(discRadius = 200, density = 5, greenPositions = []) {
+    // Scatter grass blades across circular terrain, avoiding greens
     const greenRadius = 30;
-    const bladeCount = Math.floor((groundSize * groundSize) / 20); // ~3000 blades
+    const bladeCount = Math.floor((discRadius * discRadius * Math.PI) / 20); // ~3000 blades for circular area
     const clumpSize = 8;
     const clumpCount = Math.ceil(bladeCount / clumpSize);
 
     for (let c = 0; c < clumpCount; c++) {
-      const clumpCenterX = (Math.random() - 0.5) * groundSize;
-      const clumpCenterZ = (Math.random() - 0.5) * groundSize;
+      // Generate random position within circular disc
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.random() * discRadius;
+      const clumpCenterX = Math.cos(angle) * distance;
+      const clumpCenterZ = Math.sin(angle) * distance;
 
       let tooCloseToGreen = false;
       for (const greenPos of greenPositions) {
@@ -1907,7 +1956,10 @@ class GrassSystem {
         const x = clumpCenterX + Math.cos(angle) * radius;
         const z = clumpCenterZ + Math.sin(angle) * radius;
 
-        this.createGrassBlade(new BABYLON.Vector3(x, 0, z));
+        // Only create grass if within disc
+        if (Math.sqrt(x * x + z * z) <= discRadius) {
+          this.createGrassBlade(new BABYLON.Vector3(x, 0, z));
+        }
       }
     }
   }
@@ -2085,20 +2137,8 @@ class SwipeArrowOverlay {
   }
 
   setupCanvas() {
-    const parent = this.renderCanvas.parentElement;
-    if (!parent) return;
-    if (window.getComputedStyle(parent).position === "static") {
-      parent.style.position = "relative";
-    }
-
-    this.overlayCanvas.style.position = "absolute";
-    this.overlayCanvas.style.left = "0";
-    this.overlayCanvas.style.top = "0";
-    this.overlayCanvas.style.width = "100%";
-    this.overlayCanvas.style.height = "100%";
-    this.overlayCanvas.style.pointerEvents = "none";
-    this.overlayCanvas.style.zIndex = "10";
-    parent.appendChild(this.overlayCanvas);
+    this.overlayCanvas.id = "swipeOverlay";
+    this.renderCanvas.parentElement.appendChild(this.overlayCanvas);
   }
 
   resize() {
@@ -2246,6 +2286,7 @@ class InputHandler {
     this.circleUIManager = circleUIManager;
     this.touchStartX = 0;
     this.touchStartY = 0;
+    this.touchStartTime = 0;
     this.isHitting = false;
     this.isSpinning = false;
     this.currentSwipeDistance = 0;
@@ -2490,6 +2531,7 @@ class InputHandler {
     this.pointerActive = true;
     this.touchStartX = event.clientX;
     this.touchStartY = event.clientY;
+    this.touchStartTime = Date.now();
     this.game.justTransitioned = false; // Reset transition guard on new pointer down
 
     // In aim mode, don't trigger hit/spin, let orbit controls handle it
@@ -2594,10 +2636,15 @@ class InputHandler {
     ) {
       const scale = CONFIG.SWIPE_OVERLAY.VISUAL_SCALE;
       const force = this.getHitForceFromDistance(distance);
+      const swipeDuration = Math.max(
+        0.01,
+        (Date.now() - this.touchStartTime) / 1000,
+      );
       this.eventManager.emit("input:hit", {
         deltaX: deltaX / scale,
         deltaY: deltaY / scale,
         force,
+        swipeDuration,
       });
       this.swipeOverlay?.addFadeArrow(
         { x: this.touchStartX, y: this.touchStartY },
@@ -2661,154 +2708,86 @@ class InputHandler {
 
 class CircleUIManager {
   constructor() {
-    this.circles = {
-      topLeft: null, // Stats (play mode)
-      topRight: null, // Compass
-      bottomLeft: null, // Power indicator
-      bottomRight: null, // Club selector (aim mode)
-    };
-    this.clubButtonsContainer = null; // Container for club +/- buttons
-    this.baseSize = 150; // Base circle size in px
-    this.createAllCircles();
-  }
-
-  createAllCircles() {
-    // Remove any existing circles
-    Object.values(this.circles).forEach((circle) => {
-      if (circle) circle.remove();
-    });
-
+    // Set CSS variables so scale-dependent sizes are correct
     const scale = CONFIG.SCREEN.UI_SCALE;
-    const size = this.baseSize * scale;
-    const margin = 15 * scale;
-    const borderWidth = 6 * scale;
-    const borderColor = "#3a6b35"; // Dark green (grass)
-    const bgColor = "rgba(144,200,150,0.85)"; // Light green (like putting green)
-    const shadow = "drop-shadow(0 2px 8px rgba(0,0,0,0.8))";
+    const root = document.documentElement;
+    root.style.setProperty("--ui-size", 150 * scale + "px");
+    root.style.setProperty("--ui-margin", 15 * scale + "px");
+    root.style.setProperty("--ui-border-width", 6 * scale + "px");
+    root.style.setProperty("--ui-btn-size", 40 * scale + "px");
+    root.style.setProperty("--ui-gap", 12 * scale + "px");
+    root.style.setProperty("--ui-mb-flag", 4 * scale + "px");
+    root.style.setProperty("--ui-flag-w", 112 * scale + "px");
+    root.style.setProperty("--ui-flag-h", 88 * scale + "px");
+    root.style.setProperty("--ui-pin-fs", 36 * scale + "px");
+    root.style.setProperty("--ui-yardage-fs", 28 * scale + "px");
+    root.style.setProperty("--ui-wind-fs", 32 * scale + "px");
+    root.style.setProperty("--ui-power-emoji-fs", 44 * scale + "px");
+    root.style.setProperty("--ui-power-fs", 26 * scale + "px");
+    root.style.setProperty("--ui-power-gap", 2 * scale + "px");
+    root.style.setProperty("--ui-club-btn-fs", 24 * scale + "px");
+    root.style.setProperty("--ui-club-icon-fs", 64 * scale + "px");
+    root.style.setProperty("--ui-club-name-fs", 24 * scale + "px");
+    root.style.setProperty("--ui-club-dist-fs", 12 * scale + "px");
 
-    const commonStyle = (top, right, bottom, left) => {
-      let css = `position:absolute;width:${size}px;height:${size}px;background:${bgColor};border:${borderWidth}px solid ${borderColor};border-radius:50%;z-index:1500;display:flex;flex-direction:column;align-items:center;justify-content:center;filter:${shadow};pointer-events:auto;`;
-      if (top !== null) css += `top:${top}px;`;
-      if (right !== null) css += `right:${right}px;`;
-      if (bottom !== null) css += `bottom:${bottom}px;`;
-      if (left !== null) css += `left:${left}px;`;
-      return css;
+    // Wire up to pre-existing DOM elements from index.html
+    this.circles = {
+      topLeft: document.getElementById("circleStats"),
+      topRight: document.getElementById("circleCompass"),
+      bottomLeft: document.getElementById("circlePower"),
+      bottomRight: document.getElementById("circleClub"),
     };
+    this.clubButtonsContainer = document.getElementById("clubSelectorWrapper");
 
-    // Top-left: Stats circle (just yardage in play mode)
-    this.circles.topLeft = document.createElement("div");
-    this.circles.topLeft.id = "circleStats";
-    this.circles.topLeft.style.cssText = commonStyle(
-      margin,
-      null,
-      null,
-      margin,
-    );
-    this.circles.topLeft.innerHTML = `
-      <div style="color:white;text-shadow:2px 2px 4px rgba(0,0,0,0.8);font-family:monospace;text-align:center;line-height:1.3;font-size:${28 * scale}px;">
-        <div style="font-size:${56 * scale}px;margin-bottom:${4 * scale}px;">📍</div>
-        <div style="color:#ffeb3b;font-weight:bold;"><span id="circleYardage">0</span>'</div>
-      </div>
-    `;
-    document.body.appendChild(this.circles.topLeft);
-
-    // Top-right: Compass circle
-    this.circles.topRight = document.createElement("div");
-    this.circles.topRight.id = "circleCompass";
-    this.circles.topRight.style.cssText = `position:absolute;top:${margin}px;right:${margin}px;display:flex;flex-direction:column;align-items:center;gap:${12 * scale}px;z-index:1500;pointer-events:none;`;
-    const compassCircle = document.createElement("div");
-    compassCircle.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:rgba(144,200,150,0.85);border:3px solid #3a6b35;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 2px 8px rgba(0,0,0,0.8));pointer-events:auto;`;
-    compassCircle.innerHTML = `
-      <svg id="compassSvg" width="${size}" height="${size}" viewBox="0 0 120 120" style="filter:${shadow};pointer-events:auto;">
-        <text x="60" y="18" text-anchor="middle" fill="#ffeb3b" font-size="28" font-weight="bold">N</text>
-        <text x="102" y="65" text-anchor="middle" fill="#ffeb3b" font-size="28" font-weight="bold">E</text>
-        <text x="60" y="108" text-anchor="middle" fill="#ffeb3b" font-size="28" font-weight="bold">S</text>
-        <text x="18" y="65" text-anchor="middle" fill="#ffeb3b" font-size="28" font-weight="bold">W</text>
-        <circle cx="60" cy="60" r="4" fill="#ffeb3b"/>
-        <g id="windArrow">
-          <polygon points="60,28 55,48 58,45 58,60 62,60 62,45 65,48" fill="#ff6b6b" stroke="#ffeb3b" stroke-width="1.5"/>
-        </g>
-      </svg>
-    `;
-    this.circles.topRight.appendChild(compassCircle);
-    const windSpeedDisplay = document.createElement("div");
-    windSpeedDisplay.id = "windSpeedDisplay";
-    windSpeedDisplay.style.cssText = `color:#ffeb3b;font-size:${32 * scale}px;font-weight:bold;font-family:monospace;pointer-events:auto;`;
-    windSpeedDisplay.textContent = "0 mph";
-    this.circles.topRight.appendChild(windSpeedDisplay);
-    document.body.appendChild(this.circles.topRight);
-
-    // Bottom-left: Power indicator circle
-    this.circles.bottomLeft = document.createElement("div");
-    this.circles.bottomLeft.id = "circlePower";
-    this.circles.bottomLeft.style.cssText = commonStyle(
-      null,
-      null,
-      margin,
-      margin,
-    );
-    this.circles.bottomLeft.innerHTML = `
-      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;gap:${4 * scale}px;">
-        <div style="font-size:${48 * scale}px;">💪</div>
-        <div style="color:#ffeb3b;font-weight:bold;font-family:monospace;font-size:${28 * scale}px;"><span id="powerPercent">0</span>%</div>
-        <div style="width:${Math.max(40 * scale, 20)}px;height:${Math.max(4 * scale, 2)}px;background:rgba(255,255,255,0.2);border-radius:2px;overflow:hidden;flex-shrink:0;">
-          <div id="powerBar" style="width:0%;height:100%;background:linear-gradient(90deg,#ffeb3b,#ff6b6b);transition:width 0.1s ease-out;"></div>
-        </div>
-      </div>
-    `;
-    document.body.appendChild(this.circles.bottomLeft);
-    // Store direct references to power elements
+    this._statsFlagImg = document.getElementById("statsFlagImg");
+    this._statsPinNumber = document.getElementById("statsPinNumber");
     this.powerPercent = document.getElementById("powerPercent");
-    this.powerBar = document.getElementById("powerBar");
-
-    // Bottom-right: Club selector circle with buttons outside
-    const clubContainerWrapper = document.createElement("div");
-    clubContainerWrapper.id = "clubSelectorWrapper";
-    clubContainerWrapper.style.cssText = `position:absolute;bottom:${margin}px;right:${margin}px;z-index:1000;display:flex;flex-direction:column;align-items:center;gap:${12 * scale}px;`;
-
-    const btnSize = 40 * scale;
-    const upBtn = document.createElement("button");
-    upBtn.id = "clubUp";
-    upBtn.textContent = "+";
-    upBtn.style.cssText = `width:${btnSize}px;height:${btnSize}px;background:rgba(100,200,100,0.7);color:#fff;border:none;border-radius:50%;cursor:pointer;font-weight:bold;font-size:${24 * scale}px;filter:${shadow};`;
-    clubContainerWrapper.appendChild(upBtn);
-
-    this.circles.bottomRight = document.createElement("div");
-    this.circles.bottomRight.id = "circleClub";
-    this.circles.bottomRight.style.cssText = `position:relative;width:${size}px;height:${size}px;background:${bgColor};border:${borderWidth}px solid ${borderColor};border-radius:50%;z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;filter:${shadow};`;
-    this.circles.bottomRight.innerHTML = `
-      <div id="clubSelectorContent" style="display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;gap:${2 * scale}px;color:white;text-shadow:2px 2px 4px rgba(0,0,0,0.8);font-family:monospace;text-align:center;">
-        <div style="font-size:${64 * scale}px;">⛳</div>
-        <div style="color:#ffeb3b;font-weight:bold;font-size:${24 * scale}px;"><span id="clubName">Driver</span></div>
-        <div style="color:#ffeb3b;margin-top:${4 * scale}px;font-size:${12 * scale}px;font-weight:bold;">~<span id="clubDistance">306</span>'</div>
-      </div>
-    `;
-    clubContainerWrapper.appendChild(this.circles.bottomRight);
-
-    const downBtn = document.createElement("button");
-    downBtn.id = "clubDown";
-    downBtn.textContent = "−";
-    downBtn.style.cssText = `width:${btnSize}px;height:${btnSize}px;background:rgba(200,100,100,0.7);color:#fff;border:none;border-radius:50%;cursor:pointer;font-weight:bold;font-size:${24 * scale}px;filter:${shadow};`;
-    clubContainerWrapper.appendChild(downBtn);
-
-    this.clubButtonsContainer = clubContainerWrapper;
-    document.body.appendChild(clubContainerWrapper);
-
-    // Store direct references to club elements AFTER appending to DOM
+    this.powerArc = document.getElementById("powerArc");
+    this._powerCircumference = 383; // 2π * 61, fixed for viewBox="0 0 150 150"
     this.clubName = document.getElementById("clubName");
     this.clubDistance = document.getElementById("clubDistance");
+    this.clubIcon = document.getElementById("clubIcon");
+
+    this._attachPressEffect(this.circles.topLeft);
+    this._attachPressEffect(document.getElementById("compassCircle"));
+    this._attachPressEffect(this.circles.bottomLeft);
+    this._attachPressEffect(this.circles.bottomRight);
+  }
+
+  _attachPressEffect(el) {
+    el.addEventListener("pointerdown", () => el.classList.add("pressed"));
+    el.addEventListener("pointerup", () => el.classList.remove("pressed"));
+    el.addEventListener("pointerleave", () => el.classList.remove("pressed"));
+    el.addEventListener("pointercancel", () => el.classList.remove("pressed"));
   }
 
   // Update stats circle (play mode) - just yardage
-  updateStats(speed, spin, height, distance) {
+  updateStats(speed, spin, height, distance, flagFrame, pinNumber) {
     document.getElementById("circleYardage").textContent = distance.toFixed(0);
+    // Sync flag image
+    if (this._statsFlagImg) {
+      const src =
+        flagFrame > 0
+          ? `assets/flag/flag-${flagFrame}.png`
+          : "assets/flag/flag.png";
+      if (this._statsFlagImg.src !== src) this._statsFlagImg.src = src;
+    }
+    // Show pin number
+    if (this._statsPinNumber && pinNumber !== undefined) {
+      this._statsPinNumber.textContent = pinNumber;
+    }
   }
 
   // Update power circle
   updatePower(powerPercent) {
     const percent = Math.max(0, Math.min(100, powerPercent));
     if (this.powerPercent) this.powerPercent.textContent = percent.toFixed(0);
-    if (this.powerBar) this.powerBar.style.width = percent + "%";
+    if (this.powerArc && this._powerCircumference) {
+      const offset = this._powerCircumference * (1 - percent / 100);
+      this.powerArc.style.strokeDashoffset = offset;
+      // Arc stays yellow
+      this.powerArc.style.stroke = PALETTE.YELLOW;
+    }
   }
 
   // Update club selector circle
@@ -2816,6 +2795,17 @@ class CircleUIManager {
     if (this.clubName) this.clubName.textContent = clubName;
     if (this.clubDistance)
       this.clubDistance.textContent = estimatedDistance.toFixed(0);
+
+    // Update club icon based on club type
+    if (this.clubIcon) {
+      let iconPath = "assets/clubs/iron.png"; // default
+      if (clubName.includes("Driver") || clubName.includes("Wood")) {
+        iconPath = "assets/clubs/driver.png";
+      } else if (clubName.includes("Putter")) {
+        iconPath = "assets/clubs/putter.png";
+      }
+      this.clubIcon.src = iconPath;
+    }
   }
 
   // Hide/show circles based on mode
@@ -2866,16 +2856,10 @@ class CircleUIManager {
   // Clean up
   destroy() {
     Object.values(this.circles).forEach((circle) => {
-      if (circle) circle.remove();
+      if (circle) circle.style.display = "none";
     });
-    if (this.clubButtonsContainer) this.clubButtonsContainer.remove();
-    this.circles = {
-      topLeft: null,
-      topRight: null,
-      bottomLeft: null,
-      bottomRight: null,
-    };
-    this.clubButtonsContainer = null;
+    if (this.clubButtonsContainer)
+      this.clubButtonsContainer.style.display = "none";
   }
 }
 
@@ -2895,13 +2879,28 @@ class UIManager {
   }
 
   update() {
-    const speed = this.golfBall.getSpeed() * 2.237; // m/s to mph
-    const height = Math.max(0, (this.golfBall.getHeight() - 1) * 3.28084); // m to feet
-    const distanceToPin = this.getDistanceToNearestPin() * 1.094; // m to yards
+    const speed = this.golfBall.getSpeed() * UNITS.MS_TO_MPH;
+    const height = Math.max(
+      0,
+      (this.golfBall.getHeight() - 1) * UNITS.M_TO_FEET,
+    );
+    const distanceToPin = this.getDistanceToNearestPin() * UNITS.M_TO_YARDS;
     const spin = this.golfBall.pendingSpinAmount * 100;
 
+    const pinManager = this.game?.scene?.pinManager;
+    const flagFrame = pinManager?.currentFlagFrame ?? 0;
+    const targetPin = this.getTargetPin();
+    const pinNumber = targetPin !== null ? targetPin + 1 : 1;
+
     if (this.circleUIManager) {
-      this.circleUIManager.updateStats(speed, spin, height, distanceToPin);
+      this.circleUIManager.updateStats(
+        speed,
+        spin,
+        height,
+        distanceToPin,
+        flagFrame,
+        pinNumber,
+      );
     } else {
       // Fallback for old DOM elements (backward compatibility)
       const speedEl = document.getElementById("circleSpeed");
@@ -2921,61 +2920,51 @@ class UIManager {
     }
 
     const ballPos = this.golfBall.getPosition();
+    const pinManager = this.game.scene.pinManager;
 
     // During AIM state, find pin most aligned with aim direction
     if (this.game.gameState === GameState.AIM && this.game.aimView) {
-      const aimDirection = this.game.aimView.cameraRotation;
-      // Aim direction is opposite camera direction (ball faces away from camera)
-      const aimVec = new BABYLON.Vector3(
-        Math.sin(aimDirection + Math.PI),
-        0,
-        Math.cos(aimDirection + Math.PI),
+      const { distance, pin } = pinManager.getTargetPin(
+        ballPos,
+        this.game.aimView.cameraRotation,
       );
-
-      let bestPin = null;
-      let smallestAngle = Math.PI;
-
-      for (let i = 0; i < this.game.scene.pinManager.pins.length; i++) {
-        const pin = this.game.scene.pinManager.pins[i];
-        const pinPos = pin.mesh.position;
-        const toPin = pinPos.subtract(ballPos);
-        const toPinFlat = toPin.clone();
-        toPinFlat.y = 0;
-
-        if (toPinFlat.length() === 0) continue;
-
-        toPinFlat.normalize();
-
-        // Calculate angle between aim direction and pin direction
-        const dotProd = BABYLON.Vector3.Dot(aimVec, toPinFlat);
-        const angle = Math.acos(Math.max(-1, Math.min(1, dotProd)));
-
-        if (angle < smallestAngle) {
-          smallestAngle = angle;
-          bestPin = pin;
-        }
-      }
-
-      // Return most-aligned pin's distance if within 90° cone (in front)
-      if (bestPin && smallestAngle < Math.PI / 2) {
-        const selectedDist = BABYLON.Vector3.Distance(
-          ballPos,
-          bestPin.mesh.position,
-        );
-        return selectedDist;
-      }
+      if (pin) return distance;
     }
 
     // During PLAY state, show nearest pin
-    const nearestPin = this.game.scene.pinManager.pins.reduce(
-      (nearest, pin) => {
-        const dist = BABYLON.Vector3.Distance(ballPos, pin.mesh.position);
-        return !nearest || dist < nearest.dist ? { dist, pin } : nearest;
-      },
-      null,
-    );
+    const nearestPin = pinManager.pins.reduce((nearest, pin) => {
+      const dist = BABYLON.Vector3.Distance(ballPos, pin.mesh.position);
+      return !nearest || dist < nearest.dist ? { dist, pin } : nearest;
+    }, null);
 
     return nearestPin ? nearestPin.dist : 0;
+  }
+
+  getTargetPin() {
+    if (!this.game?.scene?.pinManager?.pins?.length) return null;
+    const pinManager = this.game.scene.pinManager;
+    const ballPos = this.golfBall.getPosition();
+
+    if (this.game.gameState === GameState.AIM && this.game.aimView) {
+      const { index } = pinManager.getTargetPin(
+        ballPos,
+        this.game.aimView.cameraRotation,
+      );
+      if (index !== -1) return index;
+    }
+
+    // Fallback: nearest pin
+    const pins = pinManager.pins;
+    let nearestIdx = 0,
+      nearestDist = Infinity;
+    for (let i = 0; i < pins.length; i++) {
+      const dist = BABYLON.Vector3.Distance(ballPos, pins[i].mesh.position);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearestIdx = i;
+      }
+    }
+    return nearestIdx;
   }
 }
 
@@ -2992,54 +2981,153 @@ class PinManager {
     this.eventManager = eventManager || new EventManager();
     this.pins = [];
     this.greens = [];
+    this.currentFlagFrame = 0; // shared frame index (0=still, 1-6=animated)
   }
 
   addPin(position, scene) {
-    const pin = BABYLON.MeshBuilder.CreateCylinder(
+    const cfg = CONFIG.PINS;
+    const baseY = position.y + cfg.PIN_Y_OFFSET;
+
+    // ── Pole: black & white stripes using per-segment materials ──
+    const STRIPE_COUNT = 8;
+    const pole = BABYLON.MeshBuilder.CreateCylinder(
       "pin",
       {
-        height: CONFIG.PINS.PIN_HEIGHT,
-        diameter: CONFIG.PINS.PIN_DIAMETER,
-        segments: 16,
+        height: cfg.PIN_HEIGHT,
+        diameter: cfg.PIN_DIAMETER,
+        segments: 12,
+        tessellation: 12,
       },
       scene,
     );
-    pin.position = position.clone();
-    pin.position.y += CONFIG.PINS.PIN_Y_OFFSET;
+    pole.position = position.clone();
+    pole.position.y = baseY;
 
-    const pinMat = Utils.createMaterial(
-      `pinMat_${Math.random()}`,
+    // Build a striped texture procedurally on a canvas
+    const stripeCanvas = document.createElement("canvas");
+    stripeCanvas.width = 4;
+    stripeCanvas.height = 256;
+    const ctx = stripeCanvas.getContext("2d");
+    const stripeH = stripeCanvas.height / STRIPE_COUNT;
+    for (let i = 0; i < STRIPE_COUNT; i++) {
+      ctx.fillStyle = i % 2 === 0 ? "#ffffff" : "#111111";
+      ctx.fillRect(0, i * stripeH, stripeCanvas.width, stripeH);
+    }
+    const stripeTexture = new BABYLON.DynamicTexture(
+      "stripesTex",
+      { width: 4, height: 256 },
       scene,
-      new BABYLON.Color3(1, 0.2, 0.2),
-      new BABYLON.Color3(1, 1, 1),
+      false,
     );
-    pin.material = pinMat;
+    stripeTexture.getContext().drawImage(stripeCanvas, 0, 0);
+    stripeTexture.update();
+    const poleMat = new BABYLON.StandardMaterial("poleMat", scene);
+    poleMat.diffuseTexture = stripeTexture;
+    poleMat.specularColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+    pole.material = poleMat;
 
-    const pinBody = new BABYLON.PhysicsAggregate(
-      pin,
+    const poleBody = new BABYLON.PhysicsAggregate(
+      pole,
       BABYLON.PhysicsShapeType.CYLINDER,
-      { mass: 0, friction: 0, restitution: 0.9 },
+      { mass: 0, friction: 0, restitution: 0.5 },
       scene,
     );
 
-    this.pins.push({ mesh: pin, body: pinBody });
+    // ── Flag quad at the top of the pole ──
+    // Use a pivot node at the pole top so rotation always pivots from the left edge.
+    const flagTopY = baseY + cfg.PIN_HEIGHT / 2;
+    const flagPivot = new BABYLON.TransformNode("flagPivot", scene);
+    flagPivot.position = new BABYLON.Vector3(
+      position.x,
+      flagTopY - cfg.FLAG_HEIGHT / 2,
+      position.z,
+    );
+
+    const flagPlane = BABYLON.MeshBuilder.CreatePlane(
+      "flag",
+      {
+        width: cfg.FLAG_WIDTH,
+        height: cfg.FLAG_HEIGHT,
+        sideOrientation: BABYLON.Mesh.DOUBLESIDE,
+      },
+      scene,
+    );
+    // Parent to pivot; offset so the left edge sits at the pivot (pole center)
+    flagPlane.parent = flagPivot;
+    flagPlane.position = new BABYLON.Vector3(cfg.FLAG_WIDTH / 2, 0, 0);
+
+    const flagMat = new BABYLON.StandardMaterial("flagMat", scene);
+    flagMat.diffuseTexture = new BABYLON.Texture("assets/flag/flag.png", scene);
+    flagMat.diffuseTexture.hasAlpha = true;
+    flagMat.useAlphaFromDiffuseTexture = true;
+    flagMat.transparencyMode = BABYLON.Material.MATERIAL_ALPHATESTANDBLEND;
+    flagMat.backFaceCulling = false;
+    flagMat.specularColor = new BABYLON.Color3(0, 0, 0);
+    flagPlane.material = flagMat;
+    flagPlane.billboardMode = BABYLON.Mesh.BILLBOARDMODE_NONE;
+
+    // Preload all flag textures with alpha enabled
+    const flagTextures = [
+      "assets/flag/flag.png",
+      "assets/flag/flag-1.png",
+      "assets/flag/flag-2.png",
+      "assets/flag/flag-3.png",
+      "assets/flag/flag-4.png",
+      "assets/flag/flag-5.png",
+      "assets/flag/flag-6.png",
+    ].map((path) => {
+      const t = new BABYLON.Texture(path, scene);
+      t.hasAlpha = true;
+      t.wrapU = BABYLON.Texture.CLAMP_ADDRESSMODE;
+      t.wrapV = BABYLON.Texture.CLAMP_ADDRESSMODE;
+      return t;
+    });
+
+    // ── Hole in the green ──
+    const hole = BABYLON.MeshBuilder.CreateDisc(
+      "hole",
+      { radius: cfg.HOLE_RADIUS, tessellation: 24 },
+      scene,
+    );
+    hole.position = position.clone();
+    hole.position.y = cfg.HOLE_Y_OFFSET;
+    hole.rotation.x = Math.PI / 2;
+    const holeMat = new BABYLON.StandardMaterial("holeMat", scene);
+    holeMat.diffuseColor = new BABYLON.Color3(0, 0, 0);
+    holeMat.specularColor = new BABYLON.Color3(0, 0, 0);
+    hole.material = holeMat;
+
+    this.pins.push({
+      mesh: pole,
+      body: poleBody,
+      flagMesh: flagPlane,
+      flagPivot,
+      flagMat,
+      flagTextures,
+      flagAnimTime: 0,
+      flagAnimFrame: 0,
+      holePosition: position.clone(),
+    });
   }
 
   addGreen(centerPos, radius, scene) {
-    const green = BABYLON.MeshBuilder.CreateDisc(
+    // Create a slightly concave green using a squashed sphere
+    const green = BABYLON.MeshBuilder.CreateSphere(
       "green",
-      { radius: radius },
+      { diameter: radius * 2, segments: 32 },
       scene,
     );
+    // Squash vertically to create a subtle bowl shape
+    green.scaling = new BABYLON.Vector3(1, 0.01, 1);
     green.position = centerPos.clone();
-    green.position.y = CONFIG.PINS.GREEN_Y_OFFSET;
-    green.rotation.x = Math.PI / 2;
+    green.position.y = 0.001; // Flush with ground
 
     const greenMat = Utils.createMaterial(
       `greenMat_${Math.random()}`,
       scene,
       new BABYLON.Color3(0.38, 0.72, 0.18),
-      new BABYLON.Color3(0.03, 0.06, 0.01),
+      new BABYLON.Color3(0.01, 0.02, 0.005), // Very low specular for matte grass
+      2, // Very low power for natural grass finish
     );
     const greenDiffuse = new BABYLON.Texture(
       CONFIG.PINS.GREEN_TEXTURE_PATH,
@@ -3062,11 +3150,77 @@ class PinManager {
     const greenPhysics = new BABYLON.PhysicsAggregate(
       green,
       BABYLON.PhysicsShapeType.MESH,
-      { mass: 0, friction: 0.7, restitution: 0.2 },
+      { mass: 0, friction: 3.0, restitution: 0.1 },
       scene,
     );
 
     this.greens.push({ mesh: green, body: greenPhysics });
+  }
+
+  updateFlags(wind, dt) {
+    const cfg = CONFIG.PINS;
+    const windSpeedMs = wind.speed; // m/s
+    const windVec = wind.getWindVector();
+    // Angle the flag faces into the wind (flag blows away from wind source)
+    const windAngle = Math.atan2(windVec.x, windVec.z) - Math.PI / 2;
+
+    for (const pin of this.pins) {
+      if (!pin.flagMesh) continue;
+
+      if (windSpeedMs < cfg.FLAG_WIND_THRESHOLD) {
+        // Still flag — no animation
+        if (pin.flagMat.diffuseTexture !== pin.flagTextures[0]) {
+          pin.flagMat.diffuseTexture = pin.flagTextures[0];
+        }
+        this.currentFlagFrame = 0;
+      } else {
+        // Animate through frames 1-6; FPS scales linearly from 4 at threshold to 12 at max wind
+        const t = Math.min(
+          1,
+          (windSpeedMs - cfg.FLAG_WIND_THRESHOLD) /
+            (CONFIG.WIND.MAX_SPEED - cfg.FLAG_WIND_THRESHOLD),
+        );
+        const animFps = 4 + t * (12 - 4);
+        pin.flagAnimTime += dt * animFps;
+        const frameIndex = 1 + (Math.floor(pin.flagAnimTime) % 6);
+        if (pin.flagMat.diffuseTexture !== pin.flagTextures[frameIndex]) {
+          pin.flagMat.diffuseTexture = pin.flagTextures[frameIndex];
+        }
+        this.currentFlagFrame = frameIndex;
+      }
+
+      // Rotate pivot so flag extends away from the pole in wind direction
+      if (pin.flagPivot) pin.flagPivot.rotation.y = windAngle;
+    }
+  }
+
+  checkHoleSink() {
+    const ballPos = this.golfBall.getPosition();
+    const ballSpeed = this.golfBall.getSpeed();
+
+    for (const pin of this.pins) {
+      const holePos = pin.holePosition;
+      if (!holePos) continue;
+      const dx = ballPos.x - holePos.x;
+      const dz = ballPos.z - holePos.z;
+      const horizDist = Math.sqrt(dx * dx + dz * dz);
+      const nearGround = ballPos.y < CONFIG.PINS.HOLE_Y_OFFSET + 1.5;
+
+      if (
+        horizDist < CONFIG.PINS.HOLE_RADIUS * 0.85 &&
+        nearGround &&
+        ballSpeed < 6
+      ) {
+        // Snap ball into hole and kill velocity first
+        this.golfBall.body.setLinearVelocity(BABYLON.Vector3.Zero());
+        this.golfBall.body.setAngularVelocity(BABYLON.Vector3.Zero());
+        this.golfBall.mesh.position.x = holePos.x;
+        this.golfBall.mesh.position.z = holePos.z;
+        this.golfBall.mesh.position.y = CONFIG.PINS.HOLE_Y_OFFSET - 0.25;
+        this.golfBall.landed = true;
+        this.eventManager.emit("pin:holesink", holePos);
+      }
+    }
   }
 
   checkPinCollisions() {
@@ -3088,6 +3242,244 @@ class PinManager {
         }, CONFIG.PINS.PIN_FLASH_DURATION_MS);
       }
     }
+  }
+
+  /**
+   * Find the target pin based on ball position and aim direction.
+   * Returns the pin most aligned with the aim direction (within 90° cone).
+   *
+   * @param {BABYLON.Vector3} ballPos - Current ball position
+   * @param {number} aimDirection - Aim direction angle (radians)
+   * @returns {{pin: Object|null, index: number, distance: number}}
+   *          pin: the pin object, index: position in pins array, distance: yardage to pin
+   */
+  getTargetPin(ballPos, aimDirection) {
+    if (!this.pins || this.pins.length === 0) {
+      return { pin: null, index: -1, distance: 0 };
+    }
+
+    // Convert aim direction to vector (opposite camera direction since ball faces away from camera)
+    const aimVec = new BABYLON.Vector3(
+      Math.sin(aimDirection + Math.PI),
+      0,
+      Math.cos(aimDirection + Math.PI),
+    );
+
+    let bestPin = null;
+    let bestIndex = -1;
+    let smallestAngle = Math.PI;
+
+    for (let i = 0; i < this.pins.length; i++) {
+      const pin = this.pins[i];
+      const pinPos = pin.mesh.position;
+      const toPin = pinPos.subtract(ballPos);
+      const toPinFlat = toPin.clone();
+      toPinFlat.y = 0;
+
+      if (toPinFlat.length() === 0) continue;
+
+      toPinFlat.normalize();
+
+      // Calculate angle between aim direction and pin direction
+      const dotProd = BABYLON.Vector3.Dot(aimVec, toPinFlat);
+      const angle = Math.acos(Math.max(-1, Math.min(1, dotProd)));
+
+      if (angle < smallestAngle) {
+        smallestAngle = angle;
+        bestPin = pin;
+        bestIndex = i;
+      }
+    }
+
+    // Return most-aligned pin's distance if within 90° cone (in front)
+    if (bestPin && smallestAngle < Math.PI / 2) {
+      const distance = BABYLON.Vector3.Distance(ballPos, bestPin.mesh.position);
+      return { pin: bestPin, index: bestIndex, distance };
+    }
+
+    return { pin: null, index: -1, distance: 0 };
+  }
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// COORDINATORS: Split responsibilities from GolfGame
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ─── SWING COORDINATOR ───────────────────────────────────────────────────────
+/**
+ * Coordinates the swing flow: input hit → club animation → ball physics → camera recovery
+ */
+class SwingCoordinator {
+  constructor(game, clubSystem, golfBall, camera, ballTrail) {
+    this.game = game;
+    this.clubSystem = clubSystem;
+    this.golfBall = golfBall;
+    this.camera = camera;
+    this.ballTrail = ballTrail;
+  }
+
+  /**
+   * Execute a swing: animate club, apply impulse at contact, recover camera after
+   */
+  executeSwing(shotDirection, force, deltaX, deltaY) {
+    const currentClubId = this.game.aimView?.currentClub ?? 12;
+    const club = ClubData.getClub(currentClubId);
+
+    // Reset camera flag before starting swing
+    this.game.swingCameraRestored = false;
+
+    // Zoom camera out for swing view
+    this.camera.setOffsets(0, 14, 20, 7, 0);
+
+    // Trigger club swing animation (visual only, no physics pause)
+    if (this.clubSystem && this.clubSystem.isLoaded) {
+      const forceRatio = Math.min(
+        force / (CONFIG.GOLF_BALL.MAX_HIT_STRENGTH * 100),
+        1,
+      );
+
+      // Apply impulse at contact frame (frame 80/100 of the animation)
+      const onContactPoint = () => {
+        this.golfBall.landed = false;
+        this.golfBall.applyHit(
+          deltaX,
+          deltaY,
+          force,
+          shotDirection,
+          club.angle,
+          club.maxDistance,
+        );
+      };
+
+      // After follow-through completes, return camera
+      const onSwingEnd = () => {
+        this.camera.setPlayView();
+      };
+
+      const ballPos = this.golfBall.getPosition();
+      this.clubSystem.swing(
+        currentClubId,
+        forceRatio,
+        ballPos,
+        shotDirection,
+        onContactPoint,
+        onSwingEnd,
+      );
+    }
+
+    this.ballTrail.startTracing();
+    this.camera.setShotStartPosition(this.golfBall.getPosition());
+  }
+}
+
+// ─── CAMERA COORDINATOR ──────────────────────────────────────────────────────
+/**
+ * Coordinates camera view transitions and state
+ */
+class CameraCoordinator {
+  constructor(camera) {
+    this.camera = camera;
+  }
+
+  /**
+   * Transition to aim mode: reset angle and view
+   */
+  transitionToAim() {
+    this.camera.setCameraAngle(0);
+    this.camera.setPlayView();
+  }
+
+  /**
+   * Transition to play mode: set initial shot position
+   */
+  transitionToPlay(ballPosition, shotDirection) {
+    this.camera.setShotStartPosition(ballPosition);
+    // Camera angle convention is opposite to aimView, so negate it
+    const cameraAngle = -shotDirection;
+    this.camera.setCameraAngleImmediate(cameraAngle);
+    this.camera.targetCameraAngle = cameraAngle;
+    this.camera.setPlayView();
+  }
+
+  /**
+   * Transition to shot review (after ball lands)
+   */
+  transitionToShotReview() {
+    this.camera.setShotReviewView();
+  }
+}
+
+// ─── GAME STATE COORDINATOR ─────────────────────────────────────────────────
+/**
+ * Coordinates game state transitions, reset logic, and landing detection
+ */
+class GameStateCoordinator {
+  constructor(game) {
+    this.game = game;
+  }
+
+  /**
+   * Transition from AIM to PLAY state (ball is clicked)
+   */
+  transitionAimToPlay(shotDirection) {
+    this.game.aimedDirection = shotDirection;
+    this.game.gameState = GameState.PLAY;
+    this.game.justTransitioned = true;
+
+    // Disable orbit controls when entering play mode
+    if (this.game.aimView) {
+      this.game.aimView.removeOrbitControls();
+      this.game.aimView.deactivate();
+    }
+
+    this.game.golfBall.startSpinTransition();
+  }
+
+  /**
+   * Handle landing state change: transition to aim mode for next shot
+   */
+  handleBallLanded() {
+    this.game.gameState = GameState.LANDED;
+    this.game.justTransitioned = true;
+  }
+
+  /**
+   * Reset game: clear state, reset ball, re-activate aim view
+   */
+  resetGame() {
+    this.game.golfBall.reset();
+    this.game.ballTrail.clear();
+    this.game.ballTrail.setVisible(false);
+    this.game.gameState = GameState.AIM;
+    this.game.golfBallFacingCamera = false;
+    this.game.swingCameraRestored = false;
+
+    if (this.game.clubSystem) {
+      this.game.clubSystem.resetClubs();
+    }
+
+    if (this.game.aimView) {
+      this.game.aimView.cameraRotation = 0; // Face toward center from north side
+      this.game.aimView.activate(); // Re-enable orbit controls
+    }
+  }
+
+  /**
+   * Handle hole sink: reset for next hole
+   */
+  handleHoleSink(holePos) {
+    // Reload page to reset game
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  }
+
+  /**
+   * Handle spin input during play
+   */
+  applySpin(spinAxis, spinAmount) {
+    if (this.game.gameState !== GameState.PLAY) return;
+    this.game.golfBall.applySpin(spinAxis, spinAmount);
   }
 }
 
@@ -3156,32 +3548,35 @@ class SceneSetup {
   }
 
   static createUndulatingTerrain(scene) {
-    const radius = 400; // Disc radius in meters (reduced from 1250 to improve performance)
+    const radius = 183; // 400 yard diameter (200 yard radius)
 
-    // Create cylinder with thin height to act like a disc with collision
-    const ground = BABYLON.MeshBuilder.CreateCylinder(
+    // Create a large flat ground disc
+    const ground = BABYLON.MeshBuilder.CreateDisc(
       "undulatedGround",
       {
-        height: 0.5, // Thin disc to prevent z-fighting
-        diameter: radius * 2,
-        tessellation: 32, // Reduced tessellation for performance
+        radius: radius,
+        tessellation: 64,
       },
       scene,
     );
+
+    // Lay it flat
+    ground.rotation.x = Math.PI / 2;
+    ground.position.y = 0;
 
     // Tiled terrain material using repeatable diffuse + normal textures
     const groundMat = Utils.createMaterial(
       "undulatedMat",
       scene,
       new BABYLON.Color3(0.25, 0.5, 0.15),
-      new BABYLON.Color3(0.1, 0.1, 0.1),
-      16,
+      new BABYLON.Color3(0.02, 0.02, 0.02), // Much darker specular for matte
+      4, // Lower power for matte finish
     );
 
     const diffuseTex = new BABYLON.Texture(CONFIG.TERRAIN.TEXTURE_PATH, scene);
     diffuseTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
     diffuseTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-    diffuseTex.uScale = 50; // Reduce from CONFIG.TERRAIN.UV_TILING to prevent shimmer
+    diffuseTex.uScale = 50;
     diffuseTex.vScale = 50;
     groundMat.diffuseTexture = diffuseTex;
 
@@ -3191,17 +3586,18 @@ class SceneSetup {
     );
     normalTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
     normalTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-    normalTex.uScale = 50; // Reduce from CONFIG.TERRAIN.UV_TILING to prevent shimmer
+    normalTex.uScale = 50;
     normalTex.vScale = 50;
     groundMat.bumpTexture = normalTex;
 
     ground.material = groundMat;
     ground.receiveShadows = true;
 
-    // Physics for terrain - use CYLINDER shape which works better for disc collision
+    // Physics for terrain - use BOX (cube) shape for reliable flat ground collision
+    // Make it a large thin box that covers the entire disc area
     const groundAggregate = new BABYLON.PhysicsAggregate(
       ground,
-      BABYLON.PhysicsShapeType.CYLINDER,
+      BABYLON.PhysicsShapeType.BOX,
       {
         mass: 0,
         friction: CONFIG.TERRAIN.FRICTION,
@@ -3211,59 +3607,85 @@ class SceneSetup {
     );
     scene.groundPhysicsBody = groundAggregate.body;
 
-    // Create water ring around the disc
+    // Create water disc around the ground - larger radius, positioned lower to avoid z-fighting
     this.createWaterRing(scene, radius);
 
     return ground;
   }
 
-  static createWaterRing(scene, innerRadius) {
-    // Create a flat disc for water - 1.5x the size of ground disc, scaled smaller
+  static createWaterRing(scene, groundRadius) {
+    // Create a large water disc extending to horizon
+    const waterRadius = 1500;
+
     const waterDisc = BABYLON.MeshBuilder.CreateDisc(
       "waterRing",
       {
-        radius: innerRadius * 1.5,
-        tessellation: 64,
+        radius: waterRadius,
+        tessellation: 128,
       },
       scene,
     );
 
-    waterDisc.position.y = -0.5; // Lower below ground
-    waterDisc.rotation.x = Math.PI / 2; // Lay flat
+    // Lay it flat, separated to avoid z-fighting
+    waterDisc.rotation.x = Math.PI / 2;
+    waterDisc.position.y = -2.0;
 
-    // Water material
-    const water = new BABYLON.WaterMaterial(
-      "waterMaterial",
+    // Custom water material with diffuse and normal maps
+    const waterMat = new BABYLON.PBRMaterial("sonicWater", scene);
+
+    // Load textures
+    const diffuseTex = new BABYLON.Texture("./assets/texture/water.png", scene);
+    diffuseTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    diffuseTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    diffuseTex.uScale = 4;
+    diffuseTex.vScale = 4;
+    waterMat.albedoTexture = diffuseTex;
+
+    const normalTex = new BABYLON.Texture(
+      "./assets/texture/waternormals.png",
       scene,
-      new BABYLON.Vector2(512, 512),
     );
-    water.backFaceCulling = false;
+    normalTex.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
+    normalTex.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
+    normalTex.uScale = 4;
+    normalTex.vScale = 4;
+    waterMat.bumpTexture = normalTex;
 
-    // Set up bump texture with proper wrapping
-    water.bumpTexture = new BABYLON.Texture("./assets/waterbump.png", scene);
-    water.bumpTexture.wrapU = BABYLON.Texture.WRAP_ADDRESSMODE;
-    water.bumpTexture.wrapV = BABYLON.Texture.WRAP_ADDRESSMODE;
-    water.bumpTexture.uScale = 4;
-    water.bumpTexture.vScale = 4;
+    // PBR water: high metallic and low roughness for Sonic water shine
+    waterMat.metallic = 0.8;
+    waterMat.roughness = 0.2;
+    waterMat.alpha = 0.85;
+    waterMat.backFaceCulling = false;
 
-    water.windForce = -3; // Slower waves
-    water.waveHeight = 0.08; // Smaller waves
-    water.windDirection = new BABYLON.Vector2(1, 1);
-    water.waterColor = new BABYLON.Color3(0.15, 0.35, 0.55);
-    water.colorBlendFactor = 0.4;
-    water.waveLength = 0.5; // Slower wave frequency
-
-    // Add reflection of ground and skybox
-    const groundMesh = scene.getMeshByName("undulatedGround");
-    const skybox = scene.getMeshByName("hdrSkyBox");
-    if (groundMesh) water.addToRenderList(groundMesh);
-    if (skybox) water.addToRenderList(skybox);
-
-    waterDisc.material = water;
-
+    waterDisc.material = waterMat;
     scene.waterRing = waterDisc;
+
+    // Animate water with floating/swaying motion instead of constant flow
+    let time = 0;
+    scene.registerBeforeRender(() => {
+      time += 0.005;
+
+      // Create floating motion using sine waves for natural sway
+      const sway1 = Math.sin(time * 0.5) * 0.1;
+      const sway2 = Math.sin(time * 0.3 + Math.PI / 4) * 0.08;
+
+      // Update texture offset for floating effect
+      if (diffuseTex) {
+        diffuseTex.uOffset = sway1;
+        diffuseTex.vOffset = sway2;
+      }
+      if (normalTex) {
+        normalTex.uOffset = sway1 * 0.5;
+        normalTex.vOffset = sway2 * 0.5;
+      }
+    });
+
+    // Add fog for mist effect on the outer water ring
+    scene.fogMode = BABYLON.Scene.FOGMODE_NONE;
   }
 }
+
+// ─── MONEY PARTICLE SYSTEM ───────────────────────────────────────────────────
 
 // ─── BALL TRAIL ──────────────────────────────────────────────────────────────
 
@@ -3276,6 +3698,7 @@ class BallTrail {
     this.maxAge = maxAge;
     this.line = null;
     this.isTracing = false;
+    this._visible = false;
     this.minDistanceBetweenPoints = CONFIG.TRAIL.MIN_DISTANCE_BETWEEN_POINTS;
     this.updateCounter = 0;
     this.updateFrequency = CONFIG.TRAIL.UPDATE_FREQUENCY;
@@ -3341,6 +3764,12 @@ class BallTrail {
     );
     this.line.color = new BABYLON.Color3(1, 0.15, 0.15);
     this.line.alpha = 0.95;
+    this.line.setEnabled(this._visible);
+  }
+
+  setVisible(visible) {
+    this._visible = visible;
+    if (this.line) this.line.setEnabled(visible);
   }
 
   update(currentPosition) {
@@ -3356,6 +3785,229 @@ class BallTrail {
     this.timestamps = [];
     this.isTracing = false;
     this.updateCounter = 0;
+  }
+}
+
+// ─── CLUB SYSTEM ──────────────────────────────────────────────────────────────
+// Manages club model loading, mesh visibility, and swing animations.
+
+class ClubSystem {
+  constructor(scene) {
+    this.scene = scene;
+    this.clubsModel = null;
+    this.allMeshes = [];
+    this.isLoaded = false;
+    this.swingInProgress = false;
+  }
+
+  async load(ballPosition) {
+    try {
+      const result = await BABYLON.SceneLoader.ImportMeshAsync(
+        "",
+        "assets/3d/",
+        "clubs.glb",
+        this.scene,
+      );
+
+      // Wrap the GLB root in a pivot node so we never overwrite its
+      // built-in coordinate conversion (GLBs bake scaling/rotation into __root__)
+      this.clubPivot = new BABYLON.TransformNode("clubPivot", this.scene);
+      this.clubPivot.position = ballPosition.clone();
+      result.meshes[0].parent = this.clubPivot;
+
+      this.clubsModel = result.meshes[0];
+      this.allMeshes = result.meshes;
+
+      // Position is now controlled via clubPivot, leave __root__ alone
+      // permanently since re-enabling a child doesn't override a disabled parent)
+      for (let i = 1; i < result.meshes.length; i++) {
+        const mesh = result.meshes[i];
+        if (mesh && mesh.name) {
+          mesh.setEnabled(false);
+        }
+      }
+
+      // Stop all animations from looping
+      for (const animGroup of this.scene.animationGroups) {
+        animGroup.loopAnimation = false;
+        animGroup.stop();
+      }
+
+      this.isLoaded = true;
+    } catch (error) {
+      console.error("Failed to load clubs.glb:", error);
+      this.isLoaded = false;
+    }
+  }
+
+  getClubTypeName(clubId) {
+    if (clubId === 0) return "putter";
+    if (clubId >= 1 && clubId <= 8) return "iron";
+    if (clubId >= 9 && clubId <= 12) return "driver";
+    return null;
+  }
+
+  getClubMeshForType(clubId) {
+    // Returns the first mesh for this club type (used to reference animation target)
+    const typeName = this.getClubTypeName(clubId);
+    if (!typeName) return null;
+    for (const mesh of this.allMeshes) {
+      if (
+        mesh &&
+        mesh.name &&
+        mesh.name.toLowerCase().includes(typeName) &&
+        !mesh.name.toLowerCase().includes("axis")
+      ) {
+        return mesh;
+      }
+    }
+    return null;
+  }
+
+  async swing(
+    clubId,
+    forceRatio,
+    ballPosition,
+    shotDirection,
+    onContactPoint = null,
+    onSwingEnd = null,
+  ) {
+    if (!this.isLoaded || this.swingInProgress) return;
+
+    this.swingInProgress = true;
+
+    // Reposition pivot to current ball position and shot direction
+    if (ballPosition && this.clubPivot) {
+      this.clubPivot.position = ballPosition.clone();
+    }
+    if (shotDirection !== undefined && this.clubPivot) {
+      // Match trajectory arrow convention: Math.PI + cameraRotation = Math.PI - shotDirection
+      this.clubPivot.rotation.y = -shotDirection;
+    }
+
+    // Hide all club meshes, then show only the relevant type
+    const typeName = this.getClubTypeName(clubId);
+    if (!typeName) {
+      console.warn(`[ClubSystem] No type name for club ${clubId}`);
+      this.swingInProgress = false;
+      return;
+    }
+    for (let i = 1; i < this.allMeshes.length; i++) {
+      const mesh = this.allMeshes[i];
+      if (mesh?.name && !mesh.name.toLowerCase().includes("axis")) {
+        const belongs = mesh.name.toLowerCase().includes(typeName);
+        mesh.setEnabled(belongs);
+      }
+    }
+
+    // Resolve animation name from club type
+    const animationNames = {
+      putter: "putterAction.001",
+      iron: "ironAction.001",
+      driver: "driverAction.001",
+    };
+    const animationName = animationNames[typeName];
+
+    // Stop any running animations
+    for (const animGroup of this.scene.animationGroups) {
+      animGroup.stop();
+      animGroup.reset();
+    }
+
+    const animation = this.scene.getAnimationGroupByName(animationName);
+    if (!animation) {
+      console.warn(`[ClubSystem] Animation not found: ${animationName}`);
+      this.swingInProgress = false;
+      return;
+    }
+
+    // Contact point is 80% through the animation; play forward through follow-through to end
+    const CONTACT_PERCENT = 0.8;
+    const animFPS = 60;
+    const frameStart = animation.from;
+    const frameEnd = animation.to;
+    const animFrameCount = frameEnd - frameStart;
+    const contactFrame = frameStart + animFrameCount * CONTACT_PERCENT;
+
+    // Harder hit = faster-looking swing. Full power = 1.0s total, weakest = 1.8s total.
+    const totalSwingDuration = 1.8 - forceRatio * 0.8;
+    // Derive speedRatio from the desired total duration
+    const speedRatio = animFrameCount / animFPS / totalSwingDuration;
+
+    // Play animation forward through the full swing (backswing + follow-through)
+    animation.reset();
+    animation.speedRatio = speedRatio;
+    animation.loopAnimation = false;
+    animation.play(false);
+
+    // Use per-frame observable to fire contact callback at exactly CONTACT_PERCENT
+    // This is reliable regardless of frame rate or setTimeout drift.
+    let contactFired = false;
+    const frameObserver = this.scene.onBeforeRenderObservable.add(() => {
+      if (contactFired) return;
+      // animation.animatables[0].masterFrame gives the current frame of the group
+      const animatable = animation.animatables && animation.animatables[0];
+      if (!animatable) return;
+      const currentFrame = animatable.masterFrame;
+      if (currentFrame >= contactFrame) {
+        contactFired = true;
+        if (onContactPoint) {
+          onContactPoint();
+        }
+      }
+    });
+
+    // Use the animation's own end event for the follow-through completion
+    animation.onAnimationGroupEndObservable.addOnce(() => {
+      // Clean up the per-frame observer
+      this.scene.onBeforeRenderObservable.remove(frameObserver);
+
+      // Ensure contact fires even if the end lands exactly on or before contactFrame
+      if (!contactFired) {
+        contactFired = true;
+        if (onContactPoint) {
+          onContactPoint();
+        }
+      }
+
+      // Hide ALL meshes for this club type (skip index 0 = root)
+      for (let i = 1; i < this.allMeshes.length; i++) {
+        const mesh = this.allMeshes[i];
+        if (
+          mesh &&
+          mesh.name &&
+          mesh.name.toLowerCase().includes(typeName) &&
+          !mesh.name.toLowerCase().includes("axis")
+        ) {
+          mesh.setEnabled(false);
+        }
+      }
+
+      if (onSwingEnd) {
+        onSwingEnd();
+      }
+
+      this.swingInProgress = false;
+    });
+  }
+
+  resetClubs() {
+    for (let i = 1; i < this.allMeshes.length; i++) {
+      const mesh = this.allMeshes[i];
+      if (mesh?.name && !mesh.name.toLowerCase().includes("axis")) {
+        mesh.setEnabled(false);
+      }
+    }
+    for (const animGroup of this.scene.animationGroups) {
+      animGroup.stop();
+      animGroup.reset();
+    }
+  }
+
+  dispose() {
+    if (this.clubsModel) {
+      this.clubsModel.dispose();
+    }
   }
 }
 
@@ -3386,20 +4038,31 @@ class GolfGame {
     this.ballTrail = null;
     this.aimView = null;
     this.gameState = GameState.AIM;
-    this.ballStartPosition = new BABYLON.Vector3(0, 0.425, 10);
+    this.ballStartPosition = new BABYLON.Vector3(0, 0.425, 150);
     this.aimedDirection = 0;
     this.justTransitioned = false;
     this.physicsDebugEnabled = false;
     this.physicsViewer = null;
     this.swipeOverlay = null;
     this.wind = new Wind();
-    this.cloudSystem = null; // Will be initialized during scene setup
+    this.cloudSystem = null;
+    this.clubSystem = null;
+    this.swingCameraRestored = false;
     this.golfBallFacingCamera = false;
 
     // Face state tracking
     this.lastBallVelocity = new BABYLON.Vector3(0, 0, 0);
     this.wasHit = false;
     this.hitCooldown = 0;
+
+    // Coordinators (initialized after scene setup)
+    this.swingCoordinator = null;
+    this.cameraCoordinator = null;
+
+    // Compass transition tracking for smooth mode switches
+    this.compassTransitionFrames = 0;
+    this.compassTransitionDuration = 3; // frames to blend rotation sources
+    this.gameStateCoordinator = null;
   }
 
   normalizeAngle(angle) {
@@ -3447,7 +4110,6 @@ class GolfGame {
       this.canvas,
       this.circleUIManager,
     );
-    this.setupAimView();
     this.setupInput();
     this.setupUI();
     this.ballTrail = new BallTrail(
@@ -3457,6 +4119,23 @@ class GolfGame {
     );
     this.setupCompass();
     this.cloudSystem = new CloudSystem(this.scene, this.camera);
+    this.clubSystem = new ClubSystem(this.scene);
+    await this.clubSystem.load(this.ballStartPosition);
+
+    // Initialize coordinators after all dependencies are set up
+    this.swingCoordinator = new SwingCoordinator(
+      this,
+      this.clubSystem,
+      this.golfBall,
+      this.camera,
+      this.ballTrail,
+    );
+    this.cameraCoordinator = new CameraCoordinator(this.camera);
+    this.gameStateCoordinator = new GameStateCoordinator(this);
+
+    // Setup AimView after coordinators are ready (it depends on them)
+    this.setupAimView();
+
     this.setupRenderLoop();
   }
 
@@ -3489,8 +4168,8 @@ class GolfGame {
   async loadCharacter() {
     const result = await BABYLON.SceneLoader.ImportMeshAsync(
       "",
-      "assets/",
-      "gball-guy.glb",
+      "assets/3d/",
+      "gball.glb",
       this.scene,
     );
 
@@ -3558,17 +4237,22 @@ class GolfGame {
     );
 
     this.eventManager.on("aimView:ballClicked", () => {
-      this.aimedDirection = this.aimView.cameraRotation;
-      this.gameState = GameState.PLAY;
-      this.justTransitioned = true;
-      this.aimView.deactivate();
+      // Use gameStateCoordinator to handle the transition
+      this.gameStateCoordinator.transitionAimToPlay(
+        this.aimView.cameraRotation,
+      );
+      // Use cameraCoordinator to update camera
+      this.cameraCoordinator.transitionToPlay(
+        this.golfBall.getPosition(),
+        this.aimedDirection,
+      );
+      // Start compass transition blend
+      this.compassTransitionFrames = 0;
+      // Ensure aimView is fully deactivated after transitioning
+      setTimeout(() => {
+        this.aimView.isActive = false;
+      }, 0);
       this.ballTrail.startTracing();
-      this.camera.setShotStartPosition(this.golfBall.getPosition());
-      this.camera.setCameraAngleImmediate(-this.aimedDirection);
-      this.camera.setPlayView();
-
-      // Enter play mode
-      this.golfBall.startSpinTransition();
     });
 
     this.aimView.activate();
@@ -3592,41 +4276,25 @@ class GolfGame {
 
     this.eventManager.on("input:hit", (data) => {
       if (this.gameState !== GameState.PLAY) return;
+
       const shotDirection = this.getShotDirection();
-      this.aimedDirection = shotDirection;
-      const currentClubId = this.aimView?.currentClub ?? 12; // Default to driver if aimView not available
-      const club = ClubData.getClub(currentClubId);
-      this.golfBall.applyHit(
+
+      // Use swingCoordinator to execute the swing
+      this.swingCoordinator.executeSwing(
+        shotDirection,
+        data.force,
         data.deltaX,
         data.deltaY,
-        data.force,
-        shotDirection,
-        club.angle,
-        club.maxDistance,
       );
-
-      this.golfBall.landed = false;
-      this.ballTrail.startTracing();
-      this.camera.setShotStartPosition(this.golfBall.getPosition());
-      this.camera.setPlayView();
     });
 
     this.eventManager.on("input:spin", (data) => {
-      if (this.gameState !== GameState.PLAY) return;
-      this.golfBall.applySpin(data.spinAxis, data.spinAmount);
+      this.gameStateCoordinator.applySpin(data.spinAxis, data.spinAmount);
     });
 
     this.eventManager.on("input:reset", () => {
-      this.golfBall.reset();
-      this.ballTrail.clear();
-      this.camera.setCameraAngle(0);
-      this.camera.setPlayView();
-      this.gameState = GameState.AIM;
-      this.golfBallFacingCamera = false;
-      if (this.aimView) {
-        this.aimView.cameraRotation = this.aimedDirection;
-      }
-      this.aimView.activate();
+      this.gameStateCoordinator.resetGame();
+      // gameStateCoordinator.resetGame() calls aimView.activate() which handles camera setup
     });
   }
 
@@ -3658,6 +4326,14 @@ class GolfGame {
     );
   }
 
+  pausePhysics() {
+    // Physics never pause - clubs are visual only
+  }
+
+  resumePhysics() {
+    // Physics never pause - clubs are visual only
+  }
+
   setupPins() {
     const pinManager = new PinManager(
       this.scene,
@@ -3665,13 +4341,43 @@ class GolfGame {
       this.eventManager,
     );
 
-    const greenPositions = [
-      new BABYLON.Vector3(-150, 0, -100),
-      new BABYLON.Vector3(-40, 0, -200),
-      new BABYLON.Vector3(80, 0, -80),
-      new BABYLON.Vector3(40, 0, -280),
-      new BABYLON.Vector3(-100, 0, -350),
-    ];
+    // Generate random pin positions outside a 100-yard radius from player
+    const playerPos = this.ballStartPosition; // (0, 0, 150)
+    const minDistance = 91.44; // 100 yards in meters
+    const discRadius = 183; // Match ground disc radius
+    const numPins = 5;
+    const greenPositions = [];
+
+    while (greenPositions.length < numPins) {
+      // Random angle and distance from origin
+      const angle = Math.random() * Math.PI * 2;
+      const maxDistance = discRadius - 25; // 25m buffer from edge
+      const distance =
+        minDistance + Math.random() * (maxDistance - minDistance - 30); // Leave buffer for green radius
+
+      const x = Math.cos(angle) * distance;
+      const z = Math.sin(angle) * distance;
+      const pos = new BABYLON.Vector3(x, 0, z);
+
+      // Check if far enough from player
+      if (BABYLON.Vector3.Distance(pos, playerPos) < minDistance) {
+        continue;
+      }
+
+      // Check if far enough from all existing greens (60m minimum = 2 x green radius of 30)
+      const minGreenDistance = 60;
+      let tooClose = false;
+      for (const existingPin of greenPositions) {
+        if (BABYLON.Vector3.Distance(pos, existingPin) < minGreenDistance) {
+          tooClose = true;
+          break;
+        }
+      }
+
+      if (!tooClose) {
+        greenPositions.push(pos);
+      }
+    }
 
     this.greenPositions = greenPositions;
 
@@ -3685,6 +4391,11 @@ class GolfGame {
     this.eventManager.on("pin:hit", (pinPos) => {
       // Handle pin hit if needed
     });
+
+    this.eventManager.on("pin:holesink", (holePos) => {
+      this.gameStateCoordinator.handleHoleSink(holePos);
+      // aimView.activate() (called in handleHoleSink) already sets up camera for AIM mode
+    });
   }
 
   async setupGrass() {
@@ -3692,9 +4403,9 @@ class GolfGame {
     this.grassSystem = new GrassSystem(this.scene, this);
 
     try {
-      await this.grassSystem.loadFrames(CONFIG.GRASS.FRAME_COUNT); // Load animation frames from config
-      // Scatter grass - instancing is efficient enough for 10x density now
-      this.grassSystem.scatter(300, 12, this.greenPositions); // Lower density for perf
+      await this.grassSystem.loadFrames(CONFIG.GRASS.FRAME_COUNT);
+      // Scatter grass across circular disc (183m radius)
+      this.grassSystem.scatter(183, 12, this.greenPositions);
     } catch (err) {
       // Silently fail if grass frames not found
     }
@@ -3704,6 +4415,7 @@ class GolfGame {
     const landingState = this.golfBall.updateLandingState();
     if (landingState === "fullLand") {
       this.ballTrail.stopTracing();
+      this.ballTrail.setVisible(true);
       this.camera.setShotReviewView();
     }
 
@@ -3897,18 +4609,37 @@ class GolfGame {
         (180 - (this.wind.direction * 180) / Math.PI + 360) % 360;
       arrow.setAttribute("transform", `rotate(${compassAngle} 60 60)`);
 
-      // Rotate entire compass to match camera angle (different for aim vs play mode)
+      // Determine rotation source with smooth transition between modes
       let cameraAngleDeg = 0;
-      if (this.aimView && this.aimView.isActive) {
+      const isTransitioning =
+        this.compassTransitionFrames < this.compassTransitionDuration;
+
+      if (isTransitioning) {
+        // During transition, blend between aimView and camera angle
+        // Note: camera.cameraAngle is negated relative to aimView.cameraRotation
+        const aimDeg = this.aimView
+          ? ((this.aimView.cameraRotation * 180) / Math.PI) % 360
+          : 0;
+        const cameraDeg =
+          this.camera && Number.isFinite(this.camera.cameraAngle)
+            ? ((-this.camera.cameraAngle * 180) / Math.PI) % 360
+            : aimDeg;
+
+        // Blend factor: 0 at start (use aim), 1 at end (use camera)
+        const blendFactor =
+          this.compassTransitionFrames / this.compassTransitionDuration;
+        cameraAngleDeg = aimDeg + (cameraDeg - aimDeg) * blendFactor;
+        this.compassTransitionFrames++;
+      } else if (this.aimView && this.aimView.isActive) {
         // In aim view, use aimView's camera rotation
         cameraAngleDeg = ((this.aimView.cameraRotation * 180) / Math.PI) % 360;
       } else if (this.camera && Number.isFinite(this.camera.cameraAngle)) {
-        // In play view, use the FollowCamera's angle (only if valid)
-        cameraAngleDeg = ((this.camera.cameraAngle * 180) / Math.PI) % 360;
+        // In play view, negate camera angle to match compass convention
+        cameraAngleDeg = ((-this.camera.cameraAngle * 180) / Math.PI) % 360;
       }
       compassSvg.style.transform = `rotate(${-cameraAngleDeg}deg)`;
 
-      speedDisplay.textContent = `${(this.wind.speed * 2.237).toFixed(0)} mph`;
+      speedDisplay.textContent = `${(this.wind.speed * UNITS.MS_TO_MPH).toFixed(0)} mph`;
     }
   }
 
@@ -3991,10 +4722,14 @@ class GolfGame {
 
       this.updateBallState();
       this.scene.pinManager?.checkPinCollisions();
+      this.scene.pinManager?.checkHoleSink();
+      this.scene.pinManager?.updateFlags(
+        this.wind,
+        this.engine.getDeltaTime() / 1000,
+      );
       this.ballTrail.update(this.golfBall.getPosition());
       this.inputHandler?.updateSwipeOverlay(this.engine.getDeltaTime());
       this.uiManager.update();
-      this.camera.update();
       this.aimView?.isActive && this.aimView.update();
       if (this.grassSystem) {
         this.grassSystem.ballPosition = this.golfBall.getPosition();
@@ -4003,6 +4738,12 @@ class GolfGame {
       if (this.cloudSystem) {
         this.cloudSystem.update(this.golfBall.getPosition(), this.wind);
       }
+    });
+
+    // Update camera AFTER physics so it reads the ball's post-step position,
+    // eliminating the one-frame lag that causes jitter during ball flight.
+    this.scene.onAfterPhysicsObservable.add(() => {
+      this.camera.update(this.engine.getDeltaTime() / 1000);
     });
 
     // Update eye gaze after animations are evaluated
