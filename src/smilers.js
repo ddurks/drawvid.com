@@ -531,7 +531,7 @@ class DrawvidDotCom extends Phaser.Scene {
       .setInteractive();
     divedaveButton.setScale(GLOBAL_SCALE);
     divedaveButton.on("pointerdown", () => {
-      window.location.href = "http://drawvid.com/code/divedave";
+      window.location.href = "https://divedave.drawvid.com/";
     });
     divedaveButton.setDepth(11);
 
