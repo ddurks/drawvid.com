@@ -3,6 +3,13 @@ const GAME = {
 };
 
 const FRAMERATE = 8;
+
+// Counted as a click on hq.drawvid.com (v.js), then followed.
+function go(url) {
+  window.drawvidClick?.(url);
+  window.location.href = url;
+}
+
 const GRAVITY = 400,
   GROUNDY = GAME.SIZE - 124;
 const MIN_CLOUDS = 7,
@@ -489,19 +496,19 @@ class DrawvidDotCom extends Phaser.Scene {
     let insta = this.add.image(300, 48, "insta").setInteractive();
     insta.setScale(GLOBAL_SCALE / 2);
     insta.on("pointerdown", () => {
-      window.location.href = "https://www.instagram.com/drawvid";
+      go("https://www.instagram.com/drawvid");
     });
     insta.setDepth(11);
     let twitter = this.add.image(380, 48, "twitter").setInteractive();
     twitter.setScale(GLOBAL_SCALE / 2);
     twitter.on("pointerdown", () => {
-      window.location.href = "https://www.twitter.com/drawvid";
+      go("https://www.twitter.com/drawvid");
     });
     twitter.setDepth(11);
     let giphy = this.add.image(460, 48, "giphy").setInteractive();
     giphy.setScale(GLOBAL_SCALE / 2);
     giphy.on("pointerdown", () => {
-      window.location.href = "https://www.giphy.com/drawvid";
+      go("https://www.giphy.com/drawvid");
     });
     giphy.setDepth(11);
     // let patreon = this.add.image(220, 48, "patreon").setInteractive();
@@ -521,7 +528,7 @@ class DrawvidDotCom extends Phaser.Scene {
       .setInteractive();
     loungeButton.setScale(GLOBAL_SCALE);
     loungeButton.on("pointerdown", () => {
-      window.location.href = "https://onlinelounge.drawvid.com/";
+      go("https://onlinelounge.drawvid.com/");
     });
     loungeButton.setDepth(10);
 
@@ -531,7 +538,7 @@ class DrawvidDotCom extends Phaser.Scene {
       .setInteractive();
     divedaveButton.setScale(GLOBAL_SCALE);
     divedaveButton.on("pointerdown", () => {
-      window.location.href = "https://divedave.drawvid.com/";
+      go("https://divedave.drawvid.com/");
     });
     divedaveButton.setDepth(11);
 
@@ -561,7 +568,7 @@ class DrawvidDotCom extends Phaser.Scene {
     code.body.setAllowGravity(false);
     code.setScale(GLOBAL_SCALE);
     code.on("pointerdown", () => {
-      window.location.href = "/code";
+      go("/code");
     });
     code.setDepth(11);
     let paradise = this.physics.add
@@ -570,7 +577,7 @@ class DrawvidDotCom extends Phaser.Scene {
     paradise.body.setAllowGravity(false);
     paradise.setScale(GLOBAL_SCALE);
     paradise.on("pointerdown", () => {
-      window.location.href = "/code/postinparadise";
+      go("/code/postinparadise");
     });
     paradise.setDepth(11);
     let about = this.physics.add
@@ -588,7 +595,7 @@ class DrawvidDotCom extends Phaser.Scene {
     gallery.body.setAllowGravity(false);
     gallery.setScale(GLOBAL_SCALE);
     gallery.on("pointerdown", () => {
-      window.location.href = "/gallery";
+      go("/gallery");
     });
     gallery.setDepth(11);
   }
@@ -745,7 +752,7 @@ class DrawvidDotCom extends Phaser.Scene {
 
   playerHandler() {
     if (this.player.x > 460) {
-      window.location.href = "/gallery";
+      go("/gallery");
     }
     if (IS_MOBILE) {
       this.playerMobileMovementHandler();
