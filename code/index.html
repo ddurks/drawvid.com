@@ -7,88 +7,377 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>drawvid.com: code</title>
+    <meta name="description" content="games, tools and demos by drawvid" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="drawvid.com: code" />
+    <meta property="og:description" content="games, tools and demos by drawvid" />
+    <meta property="og:url" content="https://drawvid.com/code/" />
+    <meta property="og:image" content="https://drawvid.com/assets/share.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" , href="../assets/favicon.ico" />
     <style>
       body {
         background: #639bff;
+        margin: 8px 8px 48px;
       }
       .links {
         display: flex;
         justify-content: center;
         align-items: center;
+        gap: 24px;
       }
-      img {
-        max-width: 300px;
+      .links img {
+        display: block;
+        height: 44px;
+        image-rendering: pixelated;
+      }
+      .links .github img {
+        height: 64px;
+      }
+      h2 {
+        margin: 40px 0 16px;
+        text-align: center;
+      }
+      h2 img {
+        width: 132px;
+        image-rendering: pixelated;
+      }
+      .projects {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 20px 16px;
+        max-width: 800px;
+        margin: 0 auto;
+      }
+      .projects > * {
+        width: min(180px, calc(50% - 8px));
+        color: #fff;
+        font: bold 15px/1.3 ui-monospace, Menlo, Consolas, monospace;
+        text-align: center;
+        text-decoration: none;
+        text-shadow:
+          2px 2px 0 #3f3f74,
+          -1px -1px 0 #3f3f74,
+          1px -1px 0 #3f3f74,
+          -1px 1px 0 #3f3f74;
+      }
+      .projects img {
+        display: block;
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: contain;
+        margin-bottom: 6px;
+      }
+
+      /* Not out yet: greyed, unlinked, under a badge that flashes. */
+      .soon {
+        position: relative;
+        color: #cbdbfc;
+      }
+      .soon img {
+        filter: grayscale(1);
+        opacity: 0.6;
+      }
+      .soon::before,
+      .soon::after {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        aspect-ratio: 1;
+        background: url(../assets/coming-soon.png) center / 111px 51px no-repeat;
+        image-rendering: pixelated;
+      }
+      .soon::after {
+        background-image: url(../assets/coming-soon-flash.png);
+        animation: flash 1s steps(1) infinite;
+      }
+      @keyframes flash {
+        50% {
+          opacity: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .soon::after {
+          display: none;
+        }
+      }
+
+      /* The home page's sky, behind everything. */
+      #sky {
+        position: fixed;
+        inset: 0;
+        z-index: -1;
+        overflow: hidden;
+        pointer-events: none;
+      }
+      #sky div {
+        position: absolute;
+        left: 0;
+        top: 0;
+        image-rendering: pixelated;
+        will-change: transform;
+      }
+      .cloud {
+        width: 128px;
+        height: 64px;
+        background: url(../assets/clouds.png) 0 0 / 512px 64px;
+      }
+      .butterfly {
+        width: 32px;
+        height: 32px;
+        background-size: 64px 64px;
       }
     </style>
     <script defer src="https://hq.drawvid.com/v.js"></script>
   </head>
   <body>
-    <div class="linkContainer">
-      <p class="links">
-        <a href="https://www.github.com/ddurks"
-          ><img src="../assets/github-guy.png" alt="ddurks on GitHub"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="cybeer"
-          ><img src="../assets/code/cybeer.gif" alt="Cybeer"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="https://cyberia.drawvid.com"
-          ><img src="../assets/code/cyberia.png" alt="Cyberia"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="cigbot/"
-          ><img src="../assets/code/cigbot.gif" alt="CigBot"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="postinparadise/"
-          ><img src="../assets/code/postinparadise.png" alt="Post in Paradise"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="https://divedave.drawvid.com/"
-          ><img src="../assets/code/divedave.png" alt="Dive Dave"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="cyberwalker/"
-          ><img src="../assets/code/cyberwalker.gif" alt="CyberWalker"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="https://onlinelounge.drawvid.com/"
-          ><img
-            src="../assets/code/digitalplanet.png"
-            alt="Online Lounge - Digital Planet"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="simple-fish/"
-          ><img src="../assets/code/simplefish.gif" alt="Simple Fish"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="lemming-simulator/"
-          ><img
-            src="../assets/code/lemmingsimulator.png"
-            alt="Lemming Simulator"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="onlinelounge/"
-          ><img src="../assets/code/onlinelounge.png" alt="Online Lounge"
-        /></a>
-      </p>
-      <p class="links">
-        <a href="drawvid.com_2.0/"
-          ><img src="../assets/code/drawvid2020.png" alt="DrawVid 2.0"
-        /></a>
-      </p>
+    <div id="sky" aria-hidden="true"></div>
+
+    <p class="links">
+      <a href="/"><img src="../assets/home-button.png" alt="home" /></a>
+      <a class="github" href="https://www.github.com/ddurks"
+        ><img src="../assets/github-guy.png" alt="ddurks on GitHub"
+      /></a>
+    </p>
+
+    <h2><img src="../assets/games-header.png" alt="games" /></h2>
+    <div class="projects">
+      <a href="https://divedave.drawvid.com/"
+        ><img
+          src="../assets/code/divedave-360.webp"
+          alt=""
+          loading="lazy"
+        />dive dave</a
+      >
+      <a href="https://cyberia.drawvid.com"
+        ><img
+          src="../assets/code/cyberia-360.webp"
+          alt=""
+          loading="lazy"
+        />cyberia</a
+      >
+      <a href="https://onlinelounge.drawvid.com/"
+        ><img
+          src="../assets/code/digitalplanet-360.webp"
+          alt=""
+          loading="lazy"
+        />the online lounge</a
+      >
+      <a href="lemming-simulator/"
+        ><img
+          src="../assets/code/lemmingsimulator.png"
+          alt=""
+          loading="lazy"
+        />lemming simulator</a
+      >
+      <span class="soon" title="coming soon"
+        ><img
+          src="../assets/code/stuntguy.png"
+          alt=""
+          loading="lazy"
+        />stunt guy</span
+      >
+      <span class="soon" title="coming soon"
+        ><img
+          src="../assets/code/appleroyale.png"
+          alt=""
+          loading="lazy"
+        />apple royale</span
+      >
+      <span class="soon" title="coming soon"
+        ><img
+          src="../assets/code/fih.png"
+          alt=""
+          loading="lazy"
+        />fih</span
+      >
+      <span class="soon" title="coming soon"
+        ><img
+          src="../assets/code/ballsgolf.png"
+          alt=""
+          loading="lazy"
+        />balls golf</span
+      >
     </div>
+
+    <h2><img src="../assets/demos-header.png" alt="demos" /></h2>
+    <div class="projects">
+      <a href="cybeer"
+        ><img
+          src="../assets/code/cybeer-360.webp"
+          alt=""
+          loading="lazy"
+        />cybeer</a
+      >
+      <a href="cigbot/"
+        ><img
+          src="../assets/code/cigbot-360.webp"
+          alt=""
+          loading="lazy"
+        />cigbot</a
+      >
+      <a href="postinparadise/"
+        ><img
+          src="../assets/code/postinparadise-360.webp"
+          alt=""
+          loading="lazy"
+        />post in paradise</a
+      >
+      <a href="cyberwalker/"
+        ><img
+          src="../assets/code/cyberwalker-360.webp"
+          alt=""
+          loading="lazy"
+        />cyberwalker</a
+      >
+      <a href="simple-fish/"
+        ><img
+          src="../assets/code/simplefish-360.webp"
+          alt=""
+          loading="lazy"
+        />simple fish</a
+      >
+      <a href="onlinelounge/"
+        ><img
+          src="../assets/code/onlinelounge-360.webp"
+          alt=""
+          loading="lazy"
+        />online lounge 1.0</a
+      >
+      <span class="soon" title="coming soon"
+        ><img
+          src="../assets/code/dave.png"
+          alt=""
+          loading="lazy"
+        />d.a.v.e.</span
+      >
+      <span class="soon" title="coming soon"
+        ><img
+          src="../assets/code/beebattle.png"
+          alt=""
+          loading="lazy"
+        />bee battle</span
+      >
+    </div>
+
+    <h2><img src="../assets/tools-header.png" alt="tools" /></h2>
+    <div class="projects">
+      <a href="https://drawvidfx.drawvid.com/"
+        ><img
+          src="../assets/code/drawvidfx.png"
+          alt=""
+          loading="lazy"
+        />drawvidfx</a
+      >
+      <a href="https://bookboy.drawvid.com/"
+        ><img
+          src="../assets/code/bookboy.png"
+          alt=""
+          loading="lazy"
+        />bookboy advance</a
+      >
+      <a href="https://recipegrabba.drawvid.com/"
+        ><img
+          src="../assets/code/recipegrabba.png"
+          alt=""
+          loading="lazy"
+        />recipe grabba</a
+      >
+    </div>
+
+    <script>
+      // Clouds drift across and butterflies flutter through, as on the home
+      // page (src/smilers.js), drawn here as plain elements behind the links.
+      (() => {
+        const sky = document.getElementById("sky");
+        const rand = (min, max) => min + Math.random() * (max - min);
+        const add = (className) => {
+          const el = document.createElement("div");
+          el.className = className;
+          sky.appendChild(el);
+          return el;
+        };
+        const draw = (thing, flip) => {
+          thing.el.style.transform = `translate(${Math.round(thing.x)}px, ${Math.round(thing.y)}px) scaleX(${flip})`;
+        };
+
+        const clouds = [];
+        const placeCloud = (cloud, x) => {
+          cloud.x = x;
+          cloud.y = rand(0, innerHeight - 64);
+          cloud.speed = rand(15, 40);
+          // The higher the cloud, the earlier its frame of the sheet.
+          const frame = Math.min(3, Math.floor((cloud.y / innerHeight) * 4));
+          cloud.el.style.backgroundPositionX = `${-frame * 128}px`;
+        };
+        const cloudCount = innerWidth < 600 ? 5 : Math.round(rand(7, 10));
+        for (let i = 0; i < cloudCount; i++) {
+          const cloud = { el: add("cloud"), flip: Math.random() < 0.5 ? -1 : 1 };
+          placeCloud(cloud, rand(-128, innerWidth));
+          draw(cloud, cloud.flip);
+          clouds.push(cloud);
+        }
+        if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+        const COLOURS = ["purple", "pink", "orange", "blue"];
+        const MAX_BUTTERFLIES = 7;
+        const STEP = 1 / 60;
+        let butterflies = [];
+        const addButterfly = () => {
+          const el = add("butterfly");
+          const colour = COLOURS[Math.floor(rand(0, COLOURS.length))];
+          el.style.backgroundImage = `url(../assets/butterfly-${colour}.png)`;
+          const y = rand(0, innerHeight);
+          butterflies.push({ el, x: rand(0, innerWidth), y, homeY: y, vx: 0, vy: 0, right: Math.random() < 0.5 });
+        };
+        // One sixtieth of a second of the home page's butterfly: mostly
+        // hovering, now and then a dart somewhere else.
+        const flutter = (b) => {
+          const dice = Math.floor(rand(0, 51));
+          if (dice === 1) {
+            b.vx = rand(-450, 450);
+            b.vy = rand(-400, 400);
+          } else if (dice > 43) {
+            b.vx = b.vy = 0;
+          }
+          b.vy += (400 / 3) * STEP;
+          if (b.y >= b.homeY) b.vy = rand(-400, 0);
+          b.x += b.vx * STEP;
+          b.y += b.vy * STEP;
+          if (b.vx !== 0) b.right = b.vx > 0;
+        };
+
+        let last = performance.now();
+        let owed = 0;
+        const frame = (now) => {
+          const dt = Math.min((now - last) / 1000, 0.1);
+          last = now;
+          for (const cloud of clouds) {
+            cloud.x += cloud.speed * dt;
+            if (cloud.x > innerWidth) placeCloud(cloud, -128);
+            draw(cloud, cloud.flip);
+          }
+          for (owed += dt; owed >= STEP; owed -= STEP) {
+            if (butterflies.length < MAX_BUTTERFLIES && Math.random() < 1 / 150) addButterfly();
+            butterflies.forEach(flutter);
+          }
+          const wings = Math.floor(now / 333) % 2;
+          butterflies = butterflies.filter((b) => {
+            if (b.x < -32 || b.x > innerWidth || b.y < -32 || b.y > innerHeight) {
+              b.el.remove();
+              return false;
+            }
+            b.el.style.backgroundPosition = `${-wings * 32}px ${b.right ? -32 : 0}px`;
+            draw(b, 1);
+            return true;
+          });
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      })();
+    </script>
   </body>
 </html>

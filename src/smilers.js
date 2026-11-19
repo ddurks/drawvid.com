@@ -22,6 +22,12 @@ const PLAYER_SPEED = 150,
   JUMP_VELOCITY = (-GRAVITY * 2) / 3;
 const GLOBAL_SCALE = 4;
 
+// The games that take turns on the middle button. Each name is its subdomain
+// of drawvid.com and its assets/<name>-button.png.
+// appleroyale, balls, fih and stuntguy have buttons drawn, to add when they're out.
+const ROTATING_GAMES = ["cyberia"];
+const GAME_ROTATE_MS = 2500;
+
 var IS_MOBILE;
 if (
   /(android|bb\d+|meego).+mobile|avantgo|bada\/|blackberry|blazer|compal|elaine|fennec|hiptop|iemobile|ip(hone|od)|ipad|iris|kindle|Android|Silk|lge |maemo|midp|mmp|netfront|opera m(ob|in)i|palm( os)?|phone|p(ixi|re)\/|plucker|pocket|psp|series(4|6)0|symbian|treo|up\.(browser|link)|vodafone|wap|windows (ce|phone)|xda|xiino/i.test(
@@ -384,7 +390,9 @@ class DrawvidDotCom extends Phaser.Scene {
     this.load.image("button", "assets/button.png");
     this.load.image("code", "assets/code-button.png");
     this.load.image("about", "assets/about-button.png");
-    this.load.image("paradise", "assets/paradise-button.png");
+    ROTATING_GAMES.forEach((name) => {
+      this.load.image(name + "-button", "assets/" + name + "-button.png");
+    });
     this.load.image("gallery-bg", "assets/gallery-bg.png");
     this.load.image("gallery-fg", "assets/gallery-fg.png");
     this.load.image("home", "assets/home-button.png");
@@ -571,15 +579,26 @@ class DrawvidDotCom extends Phaser.Scene {
       go("/code");
     });
     code.setDepth(11);
-    let paradise = this.physics.add
-      .image((2 * GAME.SIZE) / 4, GAME.SIZE / 3, "paradise")
+    let games = ROTATING_GAMES.slice();
+    shuffleArray(games);
+    let current = 0;
+    let game = this.physics.add
+      .image((2 * GAME.SIZE) / 4, GAME.SIZE / 3, games[current] + "-button")
       .setInteractive();
-    paradise.body.setAllowGravity(false);
-    paradise.setScale(GLOBAL_SCALE);
-    paradise.on("pointerdown", () => {
-      go("/code/postinparadise");
+    game.body.setAllowGravity(false);
+    game.setScale(GLOBAL_SCALE);
+    game.on("pointerdown", () => {
+      go("https://" + games[current] + ".drawvid.com/");
     });
-    paradise.setDepth(11);
+    game.setDepth(11);
+    this.time.addEvent({
+      delay: GAME_ROTATE_MS,
+      loop: true,
+      callback: () => {
+        current = (current + 1) % games.length;
+        game.setTexture(games[current] + "-button");
+      },
+    });
     let about = this.physics.add
       .image((3 * GAME.SIZE) / 4, GAME.SIZE / 3, "about")
       .setInteractive();
