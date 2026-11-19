@@ -12,7 +12,7 @@
     <meta property="og:title" content="drawvid.com: code" />
     <meta property="og:description" content="games, tools and demos by drawvid" />
     <meta property="og:url" content="https://drawvid.com/code/" />
-    <meta property="og:image" content="https://drawvid.com/assets/share.png" />
+    <meta property="og:image" content="https://drawvid.com/assets/share-2.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="icon" , href="../assets/favicon.ico" />
     <style>
@@ -76,8 +76,7 @@
         color: #cbdbfc;
       }
       .soon img {
-        filter: grayscale(1);
-        opacity: 0.6;
+        filter: grayscale(1) contrast(0.5) brightness(1.15);
       }
       .soon::before,
       .soon::after {
@@ -120,15 +119,18 @@
         image-rendering: pixelated;
         will-change: transform;
       }
+      /* --s is the home page's scale: its scene is 512 units along the
+         window's short side, clouds drawn 4x and butterflies 2x. */
       .cloud {
-        width: 128px;
-        height: 64px;
-        background: url(../assets/clouds.png) 0 0 / 512px 64px;
+        width: calc(128px * var(--s));
+        height: calc(64px * var(--s));
+        background: url(../assets/clouds.png) 0 0 / calc(512px * var(--s))
+          calc(64px * var(--s));
       }
       .butterfly {
-        width: 32px;
-        height: 32px;
-        background-size: 64px 64px;
+        width: calc(32px * var(--s));
+        height: calc(32px * var(--s));
+        background-size: calc(64px * var(--s)) calc(64px * var(--s));
       }
     </style>
     <script defer src="https://hq.drawvid.com/v.js"></script>
@@ -290,10 +292,23 @@
 
     <script>
       // Clouds drift across and butterflies flutter through, as on the home
-      // page (src/smilers.js), drawn here as plain elements behind the links.
+      // page (src/smilers.js) and at its sizes and speeds, drawn here as plain
+      // elements behind the links.
       (() => {
         const sky = document.getElementById("sky");
         const rand = (min, max) => min + Math.random() * (max - min);
+        // The home page's scene is 512 units along the window's short side;
+        // `unit` is one of them in px, and everything below is in units.
+        let unit, width, height;
+        const measure = () => {
+          unit = Math.min(innerWidth, innerHeight) / 512;
+          width = innerWidth / unit;
+          height = innerHeight / unit;
+          sky.style.setProperty("--s", unit);
+        };
+        measure();
+        addEventListener("resize", measure);
+
         const add = (className) => {
           const el = document.createElement("div");
           el.className = className;
@@ -301,37 +316,40 @@
           return el;
         };
         const draw = (thing, flip) => {
-          thing.el.style.transform = `translate(${Math.round(thing.x)}px, ${Math.round(thing.y)}px) scaleX(${flip})`;
+          thing.el.style.transform = `translate(${Math.round(thing.x * unit)}px, ${Math.round(thing.y * unit)}px) scaleX(${flip})`;
         };
 
         const clouds = [];
         const placeCloud = (cloud, x) => {
           cloud.x = x;
-          cloud.y = rand(0, innerHeight - 64);
-          cloud.speed = rand(15, 40);
+          cloud.y = rand(0, height - 64);
+          cloud.speed = rand(10, 25);
           // The higher the cloud, the earlier its frame of the sheet.
-          const frame = Math.min(3, Math.floor((cloud.y / innerHeight) * 4));
-          cloud.el.style.backgroundPositionX = `${-frame * 128}px`;
+          const frame = Math.min(3, Math.floor((cloud.y / height) * 4));
+          cloud.el.style.backgroundPositionX = `calc(${-frame * 128}px * var(--s))`;
         };
-        const cloudCount = innerWidth < 600 ? 5 : Math.round(rand(7, 10));
+        // Half as many as the home page has for a window this shape: there
+        // they keep to the top half, here they have the whole sky.
+        const screens = (width * height) / (512 * 512);
+        const cloudCount = Math.round((rand(7, 10) * screens) / 2);
         for (let i = 0; i < cloudCount; i++) {
           const cloud = { el: add("cloud"), flip: Math.random() < 0.5 ? -1 : 1 };
-          placeCloud(cloud, rand(-128, innerWidth));
+          placeCloud(cloud, rand(-128, width));
           draw(cloud, cloud.flip);
           clouds.push(cloud);
         }
         if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
         const COLOURS = ["purple", "pink", "orange", "blue"];
-        const MAX_BUTTERFLIES = 7;
+        const MAX_BUTTERFLIES = Math.round(7 * screens);
         const STEP = 1 / 60;
         let butterflies = [];
         const addButterfly = () => {
           const el = add("butterfly");
           const colour = COLOURS[Math.floor(rand(0, COLOURS.length))];
           el.style.backgroundImage = `url(../assets/butterfly-${colour}.png)`;
-          const y = rand(0, innerHeight);
-          butterflies.push({ el, x: rand(0, innerWidth), y, homeY: y, vx: 0, vy: 0, right: Math.random() < 0.5 });
+          const y = rand(0, height);
+          butterflies.push({ el, x: rand(0, width), y, homeY: y, vx: 0, vy: 0, right: Math.random() < 0.5 });
         };
         // One sixtieth of a second of the home page's butterfly: mostly
         // hovering, now and then a dart somewhere else.
@@ -357,7 +375,7 @@
           last = now;
           for (const cloud of clouds) {
             cloud.x += cloud.speed * dt;
-            if (cloud.x > innerWidth) placeCloud(cloud, -128);
+            if (cloud.x > width) placeCloud(cloud, -128);
             draw(cloud, cloud.flip);
           }
           for (owed += dt; owed >= STEP; owed -= STEP) {
@@ -366,11 +384,11 @@
           }
           const wings = Math.floor(now / 333) % 2;
           butterflies = butterflies.filter((b) => {
-            if (b.x < -32 || b.x > innerWidth || b.y < -32 || b.y > innerHeight) {
+            if (b.x < -32 || b.x > width || b.y < -32 || b.y > height) {
               b.el.remove();
               return false;
             }
-            b.el.style.backgroundPosition = `${-wings * 32}px ${b.right ? -32 : 0}px`;
+            b.el.style.backgroundPosition = `calc(${-wings * 32}px * var(--s)) calc(${b.right ? -32 : 0}px * var(--s))`;
             draw(b, 1);
             return true;
           });

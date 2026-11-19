@@ -1,6 +1,27 @@
+// The scene is SIZE units along the window's short side and however many the
+// window's shape makes it along the other, so it fills any screen: a tall
+// phone gets more sky, a wide desktop more ground to either side.
 const GAME = {
   SIZE: 512,
+  WIDTH: 512,
+  HEIGHT: 512,
 };
+let GROUNDY;
+
+// Sets the scene's size from the window's. Returns true if it changed.
+function fitGameToWindow() {
+  const w = window.innerWidth || GAME.SIZE,
+    h = window.innerHeight || GAME.SIZE;
+  const even = (n) => 2 * Math.ceil(n / 2);
+  const width = w >= h ? even((GAME.SIZE * w) / h) : GAME.SIZE;
+  const height = w >= h ? GAME.SIZE : even((GAME.SIZE * h) / w);
+  const changed = width !== GAME.WIDTH || height !== GAME.HEIGHT;
+  GAME.WIDTH = width;
+  GAME.HEIGHT = height;
+  GROUNDY = height - 124;
+  return changed;
+}
+fitGameToWindow();
 
 const FRAMERATE = 8;
 
@@ -10,8 +31,7 @@ function go(url) {
   window.location.href = url;
 }
 
-const GRAVITY = 400,
-  GROUNDY = GAME.SIZE - 124;
+const GRAVITY = 400;
 const MIN_CLOUDS = 7,
   MAX_CLOUDS = 10,
   CLOUDMINSPEED = 10,
@@ -51,13 +71,15 @@ getRandomInt = function (min, max) {
 class PopUp extends Phaser.GameObjects.Group {
   constructor(scene) {
     super(scene);
-    this.popup = scene.add.image(GAME.SIZE / 2, GAME.SIZE / 2, "popup");
+    this.popup = scene.add.image(GAME.WIDTH / 2, GAME.HEIGHT / 2, "popup");
     this.popup.setDepth(12);
     this.popup.setVisible(false);
     this.popup.setScrollFactor(0);
     this.popup.setScale(GLOBAL_SCALE);
 
-    this.x = scene.add.image(432, 80, "x").setInteractive();
+    this.x = scene.add
+      .image(GAME.WIDTH / 2 + 176, GAME.HEIGHT / 2 - 176, "x")
+      .setInteractive();
     this.x.on("pointerdown", () => {
       this.close();
     });
@@ -67,7 +89,7 @@ class PopUp extends Phaser.GameObjects.Group {
     this.x.setScale(GLOBAL_SCALE);
 
     this.textBody = scene.add
-      .text(GAME.SIZE / 2, 100, "", {
+      .text(GAME.WIDTH / 2, GAME.HEIGHT / 2 - 156, "", {
         fontFamily: "Arial",
         fontSize: "32px",
         color: "#000000",
@@ -474,25 +496,36 @@ class DrawvidDotCom extends Phaser.Scene {
   }
 
   create() {
-    this.physics.world.setBounds(0, 0, GAME.SIZE, GROUNDY);
-    let bg = this.add.image(GAME.SIZE / 2, GAME.SIZE / 2, "bg");
-    bg.setScale(GLOBAL_SCALE);
-    let g = this.add.image(GAME.SIZE / 2, GAME.SIZE / 2, "ground");
-    g.setScale(GLOBAL_SCALE);
+    // A restart (the window changed shape) starts from nothing.
+    this.clouds = [];
+    this.butterflies = [];
+    this.sparkles = [];
+
+    this.physics.world.setBounds(0, 0, GAME.WIDTH, GROUNDY);
+    // The hills and ground are one screen wide and repeat to either side of
+    // the middle one; they sit on the bottom edge, with sky above.
+    ["bg", "ground"].forEach((key) => {
+      this.eachTile((left) => {
+        this.add
+          .image(left, GAME.HEIGHT, key)
+          .setOrigin(0, 1)
+          .setScale(GLOBAL_SCALE);
+      });
+    });
 
     this.spawnClouds();
     this.spawnBackFlowers();
     let galleryBG = this.physics.add.image(
-      GAME.SIZE - 64,
-      (7 * GAME.SIZE) / 11,
+      GAME.WIDTH - 64,
+      GROUNDY - 62,
       "gallery-bg",
     );
     galleryBG.body.setAllowGravity(false);
     galleryBG.setScale(GLOBAL_SCALE);
     this.player = new Smiler(
       this,
-      GAME.SIZE / 2,
-      GAME.SIZE / 4 + PLAYER_SIZE * GLOBAL_SCALE,
+      GAME.WIDTH / 2,
+      GAME.HEIGHT / 4 + PLAYER_SIZE * GLOBAL_SCALE,
     );
     this.player.setScale(GLOBAL_SCALE);
     this.addButtons();
@@ -501,19 +534,21 @@ class DrawvidDotCom extends Phaser.Scene {
     let logo = this.add.image(48, 48, "logo").setInteractive();
     logo.setScale(GLOBAL_SCALE);
 
-    let insta = this.add.image(300, 48, "insta").setInteractive();
+    let insta = this.add.image(GAME.WIDTH - 212, 48, "insta").setInteractive();
     insta.setScale(GLOBAL_SCALE / 2);
     insta.on("pointerdown", () => {
       go("https://www.instagram.com/drawvid");
     });
     insta.setDepth(11);
-    let twitter = this.add.image(380, 48, "twitter").setInteractive();
+    let twitter = this.add
+      .image(GAME.WIDTH - 132, 48, "twitter")
+      .setInteractive();
     twitter.setScale(GLOBAL_SCALE / 2);
     twitter.on("pointerdown", () => {
       go("https://www.twitter.com/drawvid");
     });
     twitter.setDepth(11);
-    let giphy = this.add.image(460, 48, "giphy").setInteractive();
+    let giphy = this.add.image(GAME.WIDTH - 52, 48, "giphy").setInteractive();
     giphy.setScale(GLOBAL_SCALE / 2);
     giphy.on("pointerdown", () => {
       go("https://www.giphy.com/drawvid");
@@ -526,10 +561,13 @@ class DrawvidDotCom extends Phaser.Scene {
     // });
     // patreon.setDepth(11);
 
+    // The two bottom buttons hang off the corners of a narrow screen and
+    // come fully into view as it widens.
+    let room = (GAME.WIDTH - GAME.SIZE) / 2;
     let loungeButton = this.add
       .image(
-        (4 * GAME.SIZE) / 5,
-        GAME.SIZE - GLOBAL_SCALE * 32,
+        GAME.WIDTH - Math.min(128, GAME.SIZE / 5 + room),
+        GAME.HEIGHT - GLOBAL_SCALE * 32,
         "lounge-button",
       )
       .setOrigin(0.5, 0)
@@ -541,7 +579,11 @@ class DrawvidDotCom extends Phaser.Scene {
     loungeButton.setDepth(10);
 
     let divedaveButton = this.add
-      .image(GAME.SIZE / 8, GAME.SIZE - GLOBAL_SCALE * 32, "divedave-button")
+      .image(
+        Math.min(128, GAME.SIZE / 8 + room),
+        GAME.HEIGHT - GLOBAL_SCALE * 32,
+        "divedave-button",
+      )
       .setOrigin(0.5, 0)
       .setInteractive();
     divedaveButton.setScale(GLOBAL_SCALE);
@@ -571,7 +613,7 @@ class DrawvidDotCom extends Phaser.Scene {
 
   addButtons() {
     let code = this.physics.add
-      .image(GAME.SIZE / 4, GAME.SIZE / 3, "code")
+      .image(GAME.WIDTH / 2 - GAME.SIZE / 4, GAME.HEIGHT / 3, "code")
       .setInteractive();
     code.body.setAllowGravity(false);
     code.setScale(GLOBAL_SCALE);
@@ -583,7 +625,7 @@ class DrawvidDotCom extends Phaser.Scene {
     shuffleArray(games);
     let current = 0;
     let game = this.physics.add
-      .image((2 * GAME.SIZE) / 4, GAME.SIZE / 3, games[current] + "-button")
+      .image(GAME.WIDTH / 2, GAME.HEIGHT / 3, games[current] + "-button")
       .setInteractive();
     game.body.setAllowGravity(false);
     game.setScale(GLOBAL_SCALE);
@@ -600,7 +642,7 @@ class DrawvidDotCom extends Phaser.Scene {
       },
     });
     let about = this.physics.add
-      .image((3 * GAME.SIZE) / 4, GAME.SIZE / 3, "about")
+      .image(GAME.WIDTH / 2 + GAME.SIZE / 4, GAME.HEIGHT / 3, "about")
       .setInteractive();
     about.body.setAllowGravity(false);
     about.setScale(GLOBAL_SCALE);
@@ -609,7 +651,7 @@ class DrawvidDotCom extends Phaser.Scene {
     });
     about.setDepth(11);
     let gallery = this.physics.add
-      .image(GAME.SIZE - 64, (7 * GAME.SIZE) / 11, "gallery-fg")
+      .image(GAME.WIDTH - 64, GROUNDY - 62, "gallery-fg")
       .setInteractive();
     gallery.body.setAllowGravity(false);
     gallery.setScale(GLOBAL_SCALE);
@@ -643,14 +685,32 @@ class DrawvidDotCom extends Phaser.Scene {
     }
   }
 
+  // Calls back with the left edge of each screen-wide tile of scenery: the
+  // middle one, and as many to either side as the window shows.
+  eachTile(callback) {
+    let middle = GAME.WIDTH / 2 - GAME.SIZE / 2;
+    let extra = Math.ceil(Math.max(0, middle) / GAME.SIZE);
+    for (let i = -extra; i <= extra; i++) {
+      callback(middle + i * GAME.SIZE);
+    }
+  }
+
+  // How many screens of the original square the scene now covers.
+  screens() {
+    return (GAME.WIDTH * GAME.HEIGHT) / (GAME.SIZE * GAME.SIZE);
+  }
+
   spawnClouds() {
-    for (let i = 0; i < getRandomInt(MIN_CLOUDS, MAX_CLOUDS); i++) {
-      let yMax = GAME.SIZE / 2;
+    let count = Math.round(
+      getRandomInt(MIN_CLOUDS, MAX_CLOUDS) * this.screens(),
+    );
+    for (let i = 0; i < count; i++) {
+      let yMax = GAME.HEIGHT / 2;
       let yPos = getRandomInt(0, yMax);
       let cloud = this.physics.add.sprite(
         getRandomInt(
           -PLAYER_SIZE * GLOBAL_SCALE,
-          GAME.SIZE + PLAYER_SIZE * GLOBAL_SCALE,
+          GAME.WIDTH + PLAYER_SIZE * GLOBAL_SCALE,
         ),
         yPos,
         "cloud",
@@ -665,43 +725,47 @@ class DrawvidDotCom extends Phaser.Scene {
   }
 
   spawnBackFlowers() {
-    let flower1 = new Flower(
-      this,
-      GAME.SIZE / 4 - PLAYER_SIZE * GLOBAL_SCALE,
-      GROUNDY - 2 * PLAYER_SIZE,
-      "pflower",
-    );
-    let flower2 = new Flower(
-      this,
-      GAME.SIZE / 2 + PLAYER_SIZE * GLOBAL_SCALE,
-      GROUNDY - 2 * PLAYER_SIZE,
-      "oflower",
-    );
-    flower1.anims.play("sway1", true);
-    flower2.anims.play("sway1", true);
+    this.eachTile((left) => {
+      let flower1 = new Flower(
+        this,
+        left + GAME.SIZE / 4 - PLAYER_SIZE * GLOBAL_SCALE,
+        GROUNDY - 2 * PLAYER_SIZE,
+        "pflower",
+      );
+      let flower2 = new Flower(
+        this,
+        left + GAME.SIZE / 2 + PLAYER_SIZE * GLOBAL_SCALE,
+        GROUNDY - 2 * PLAYER_SIZE,
+        "oflower",
+      );
+      flower1.anims.play("sway1", true);
+      flower2.anims.play("sway1", true);
+    });
   }
 
   spawnFrontFlowers() {
-    let flower1 = new Flower(
-      this,
-      GAME.SIZE / 2 - PLAYER_SIZE * GLOBAL_SCALE,
-      GROUNDY - (3 * PLAYER_SIZE) / 2,
-      "bflower",
-    );
-    let flower2 = new Flower(
-      this,
-      GAME.SIZE - PLAYER_SIZE * GLOBAL_SCALE,
-      GROUNDY - (3 * PLAYER_SIZE) / 2,
-      "pflower",
-    );
-    flower1.anims.play("sway2", true);
-    flower2.anims.play("sway2", true);
+    this.eachTile((left) => {
+      let flower1 = new Flower(
+        this,
+        left + GAME.SIZE / 2 - PLAYER_SIZE * GLOBAL_SCALE,
+        GROUNDY - (3 * PLAYER_SIZE) / 2,
+        "bflower",
+      );
+      let flower2 = new Flower(
+        this,
+        left + GAME.SIZE - PLAYER_SIZE * GLOBAL_SCALE,
+        GROUNDY - (3 * PLAYER_SIZE) / 2,
+        "pflower",
+      );
+      flower1.anims.play("sway2", true);
+      flower2.anims.play("sway2", true);
+    });
   }
 
   handleClouds() {
     this.clouds.forEach((cloud) => {
-      if (cloud.x >= GAME.SIZE + (cloud.width * GLOBAL_SCALE) / 2) {
-        let yMax = GAME.SIZE / 2;
+      if (cloud.x >= GAME.WIDTH + (cloud.width * GLOBAL_SCALE) / 2) {
+        let yMax = GAME.HEIGHT / 2;
         let yPos = getRandomInt(0, yMax);
         cloud.setPosition(-PLAYER_SIZE * GLOBAL_SCALE, yPos);
         cloud.setVelocityX(getRandomInt(CLOUDMINSPEED, CLOUDMAXSPEED));
@@ -727,18 +791,19 @@ class DrawvidDotCom extends Phaser.Scene {
   }
 
   generateButterfly() {
-    if (this.butterflies.length < MAX_BUTTERFLIES) {
+    let most = Math.round(MAX_BUTTERFLIES * this.screens());
+    if (this.butterflies.length < most) {
       let butterfly = new Butterfly(
         this,
-        getRandomInt(0, GROUNDY),
-        getRandomInt(0, GAME.SIZE),
+        getRandomInt(0, GAME.WIDTH),
+        getRandomInt(0, GAME.HEIGHT),
       );
       this.butterflies.push(butterfly);
       this.physics.add.collider(this.player, butterfly, (player, butterfly) => {
         let sparkle = new Sparkle(this, butterfly.x, butterfly.y);
         this.sparkles.push(sparkle);
-        butterfly.x = GAME.SIZE + GAME.SIZE;
-        butterfly.y = GAME.SIZE + GAME.SIZE;
+        butterfly.x = GAME.WIDTH + GAME.SIZE;
+        butterfly.y = GAME.HEIGHT + GAME.SIZE;
       });
       return butterfly;
     }
@@ -770,7 +835,7 @@ class DrawvidDotCom extends Phaser.Scene {
   }
 
   playerHandler() {
-    if (this.player.x > 460) {
+    if (this.player.x > GAME.WIDTH - 52) {
       go("/gallery");
     }
     if (IS_MOBILE) {
@@ -857,7 +922,7 @@ function shuffleArray(array) {
 }
 
 var gameConfig = {
-  backgroundColor: 0x00008b,
+  backgroundColor: 0x639bff,
   render: {
     roundPixels: true,
     pixelArt: true,
@@ -865,10 +930,12 @@ var gameConfig = {
   },
   scale: {
     parent: "phaser-div",
-    mode: Phaser.Scale.FIT,
+    // The scene is the window's shape to within a pixel; cover rather than
+    // fit, so that pixel never shows as a gap at an edge.
+    mode: Phaser.Scale.ENVELOP,
     autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: GAME.SIZE,
-    height: GAME.SIZE,
+    width: GAME.WIDTH,
+    height: GAME.HEIGHT,
   },
   parent: "phaser-div",
   dom: {
@@ -885,3 +952,15 @@ var gameConfig = {
 };
 var game = new Phaser.Game(gameConfig);
 window.focus();
+
+// When the window changes shape, lay the scene out again for it.
+let resizing;
+window.addEventListener("resize", () => {
+  clearTimeout(resizing);
+  resizing = setTimeout(() => {
+    if (fitGameToWindow()) {
+      game.scale.setGameSize(GAME.WIDTH, GAME.HEIGHT);
+      game.scene.getScene("DrawvidDotCom").scene.restart();
+    }
+  }, 150);
+});
