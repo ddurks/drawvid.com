@@ -42,6 +42,15 @@ const PLAYER_SPEED = 150,
   JUMP_VELOCITY = (-GRAVITY * 2) / 3;
 const GLOBAL_SCALE = 4;
 
+// Frames are drawn at full rate while the smiler is on the move and at a
+// calmer one when the scene is only drifting, so a phone left on the page
+// isn't kept busy. Anything left to chance is rolled TICKS_PER_SECOND times a
+// second whichever rate is in force.
+const ACTIVE_FPS = 60,
+  IDLE_FPS = 30,
+  IDLE_AFTER_MS = 2000,
+  TICKS_PER_SECOND = 60;
+
 // The games that take turns on the middle button. Each name is its subdomain
 // of drawvid.com and its assets/<name>-button.png.
 // appleroyale, balls, fih and stuntguy have buttons drawn, to add when they're out.
@@ -500,6 +509,9 @@ class DrawvidDotCom extends Phaser.Scene {
     this.clouds = [];
     this.butterflies = [];
     this.sparkles = [];
+    this.owedTicks = 0;
+    this.lastActive = 0;
+    this.pace = 0;
 
     this.physics.world.setBounds(0, 0, GAME.WIDTH, GROUNDY);
     // The hills and ground are one screen wide and repeat to either side of
@@ -695,15 +707,9 @@ class DrawvidDotCom extends Phaser.Scene {
     }
   }
 
-  // How many screens of the original square the scene now covers.
-  screens() {
-    return (GAME.WIDTH * GAME.HEIGHT) / (GAME.SIZE * GAME.SIZE);
-  }
-
+  // The same few clouds whatever the window's shape, spread over all of it.
   spawnClouds() {
-    let count = Math.round(
-      getRandomInt(MIN_CLOUDS, MAX_CLOUDS) * this.screens(),
-    );
+    let count = getRandomInt(MIN_CLOUDS, MAX_CLOUDS);
     for (let i = 0; i < count; i++) {
       let yMax = GAME.HEIGHT / 2;
       let yPos = getRandomInt(0, yMax);
@@ -784,27 +790,62 @@ class DrawvidDotCom extends Phaser.Scene {
           : 3;
   }
 
-  update() {
+  update(time, delta) {
     this.handleClouds();
-    this.updateAllButterflies();
+    this.owedTicks = Math.min(
+      this.owedTicks + (delta * TICKS_PER_SECOND) / 1000,
+      6,
+    );
+    for (; this.owedTicks >= 1; this.owedTicks--) {
+      this.updateAllButterflies();
+    }
     this.playerHandler();
+    this.setPace(time);
+  }
+
+  // Full frame rate while there's a finger or key down or the smiler is
+  // still moving, and for a moment after; the idle rate otherwise.
+  setPace(time) {
+    let body = this.player.body;
+    let busy =
+      this.lastActive === 0 ||
+      this.input.activePointer.isDown ||
+      Object.values(this.controls).some((key) => key.isDown) ||
+      body.velocity.x !== 0 ||
+      body.velocity.y !== 0;
+    if (busy) {
+      this.lastActive = time;
+    }
+    let pace = time - this.lastActive < IDLE_AFTER_MS ? ACTIVE_FPS : IDLE_FPS;
+    if (pace !== this.pace) {
+      this.pace = pace;
+      // Phaser 3.60 draws a frame once this many ms have built up, and has
+      // no setter for it. A little under the frame time, so a display's
+      // jitter never costs an extra frame.
+      this.game.loop._limitRate = 1000 / pace - 2;
+    }
   }
 
   generateButterfly() {
-    let most = Math.round(MAX_BUTTERFLIES * this.screens());
-    if (this.butterflies.length < most) {
+    if (this.butterflies.length < MAX_BUTTERFLIES) {
       let butterfly = new Butterfly(
         this,
         getRandomInt(0, GAME.WIDTH),
         getRandomInt(0, GAME.HEIGHT),
       );
       this.butterflies.push(butterfly);
-      this.physics.add.collider(this.player, butterfly, (player, butterfly) => {
-        let sparkle = new Sparkle(this, butterfly.x, butterfly.y);
-        this.sparkles.push(sparkle);
-        butterfly.x = GAME.WIDTH + GAME.SIZE;
-        butterfly.y = GAME.HEIGHT + GAME.SIZE;
-      });
+      // Kept so it can go when the butterfly does; left behind, they pile up
+      // in the physics world for as long as the page is open.
+      butterfly.collider = this.physics.add.collider(
+        this.player,
+        butterfly,
+        (player, butterfly) => {
+          let sparkle = new Sparkle(this, butterfly.x, butterfly.y);
+          this.sparkles.push(sparkle);
+          butterfly.x = GAME.WIDTH + GAME.SIZE;
+          butterfly.y = GAME.HEIGHT + GAME.SIZE;
+        },
+      );
       return butterfly;
     }
     return null;
@@ -815,21 +856,24 @@ class DrawvidDotCom extends Phaser.Scene {
       if (getRandomInt(0, 150) === 69) {
         this.generateButterfly();
       }
-      this.butterflies.forEach((butterfly, index, butterflies) => {
+      this.butterflies = this.butterflies.filter((butterfly) => {
         butterfly.update();
         if (
           !this.cameras.main.worldView.contains(butterfly.x, butterfly.y) ||
           butterfly.y >= GROUNDY
         ) {
-          butterflies.splice(index, 1);
+          butterfly.collider.destroy();
           butterfly.destroy();
+          return false;
         }
+        return true;
       });
-      this.sparkles.forEach((sparkle, index, sparkles) => {
+      this.sparkles = this.sparkles.filter((sparkle) => {
         if (sparkle.frame.name.toString() === "6") {
-          sparkles.splice(index, 1);
           sparkle.destroy();
+          return false;
         }
+        return true;
       });
     }
   }
@@ -927,6 +971,11 @@ var gameConfig = {
     roundPixels: true,
     pixelArt: true,
     antialias: false,
+    powerPreference: "low-power",
+  },
+  // A limit has to be set here for the scene to be able to change it (setPace).
+  fps: {
+    limit: ACTIVE_FPS,
   },
   scale: {
     parent: "phaser-div",

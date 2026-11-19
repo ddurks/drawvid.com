@@ -335,10 +335,8 @@
           const frame = Math.min(3, Math.floor((cloud.y / height) * 4));
           cloud.el.style.backgroundPositionX = `calc(${-frame * 128}px * var(--s))`;
         };
-        // Half as many as the home page has for a window this shape: there
-        // they keep to the top half, here they have the whole sky.
-        const screens = (width * height) / (512 * 512);
-        const cloudCount = Math.round((rand(7, 10) * screens) / 2);
+        // As many as the home page has, whatever the window's shape.
+        const cloudCount = Math.round(rand(7, 10));
         for (let i = 0; i < cloudCount; i++) {
           const cloud = { el: add("cloud"), flip: Math.random() < 0.5 ? -1 : 1 };
           placeCloud(cloud, rand(-128, width));
@@ -348,7 +346,7 @@
         if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 
         const COLOURS = ["purple", "pink", "orange", "blue"];
-        const MAX_BUTTERFLIES = Math.round(7 * screens);
+        const MAX_BUTTERFLIES = 7;
         const STEP = 1 / 60;
         let butterflies = [];
         const addButterfly = () => {
